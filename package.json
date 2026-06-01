@@ -1,0 +1,26 @@
+{
+  "name": "yellow-ue-worlds",
+  "private": true,
+  "version": "0.0.1",
+  "description": "LLM-controlled, real-time, stateful 3D world on Unreal Engine 5.7, delivered via Pixel Streaming.",
+  "type": "module",
+  "packageManager": "pnpm@11.5.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "install:all": "pnpm install && uv sync",
+    "dev": "pnpm --filter @yellow-ue/inspector dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:py": "uv run pytest",
+    "lint": "pnpm -r lint",
+    "lint:py": "uv run ruff check .",
+    "format": "pnpm -r format",
+    "format:py": "uv run ruff format .",
+    "typecheck": "pnpm -r typecheck",
+    "typecheck:py": "uv run mypy .",
+    "gen:types": "echo 'wired up in task 0.3 (packages/world-api)'"
+  }
+}

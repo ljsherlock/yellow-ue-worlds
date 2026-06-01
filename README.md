@@ -15,9 +15,10 @@ state is persisted in a temporal knowledge graph so the world has memory.
 |---|---|---|
 | Research / de-risking | ✅ Complete (2026-06-01) | See `## De-risking findings` |
 | Architecture decisions | ✅ Locked | See `## Tech stack decisions` |
+| First world-API tools | ✅ Locked 2026-06-01 | See `## First world-API tools` (`SetSkyState`, `AdvanceTime`, `SpawnTrees`) |
 | GCP L4 quota | ✅ Confirmed 2026-06-01 | 16 on-demand + 16 preemptible in `us-central1`, project `task-assistant-project`. No request needed for MVP. |
-| Project rules | ⏳ Pending creation | See `## Project rules` |
-| Monorepo bootstrap | ⏳ Not started | Phase 0 of MVP plan |
+| Project rules | ✅ Complete 2026-06-01 | R1–R5 live in `.cursor/rules/` |
+| Monorepo bootstrap | ✅ Complete 2026-06-01 | pnpm 11.5.0 + uv (Python 3.14), workspace scaffolded |
 | Inspector pages | ⏳ Not started | Phase 1 of MVP plan |
 | Real components | ⏳ Not started | Phase 2 of MVP plan |
 | GCP infrastructure | ⏳ Not started | Phase 3 of MVP plan |
@@ -119,6 +120,79 @@ All findings checked against live primary sources, not search summaries.
 | AWS over GCP | No quality difference, GCP L4 ~15% cheaper, GCP has AV1 hardware encoder, TensorWorks publishes GCP guide |
 | Immersive Stream for XR (GCP managed) | UE 5.3 max, 30 FPS / 2s load targets, mobile-AR-first positioning |
 | Unreal MCP servers (community) | Editor-time only, not runtime control of packaged builds |
+
+---
+
+## First world-API tools (locked 2026-06-01)
+
+These three tools form the initial vocabulary the LLM uses to talk to the
+world. They were chosen because together they hit three different mechanism
+families (atmospheric, temporal, procedural-spawn), each produces a visually
+unmistakable change, each maps to a natural English phrase, and they
+interact meaningfully (time advances → trees grow; sky becomes storm →
+trees sway).
+
+**Scene assumption:** open landscape with a sky, terrain, and room for
+trees. The MVP world is outdoor and natural; we can add interiors and
+abstract spaces in later iterations.
+
+### 1. `SetSkyState(preset, transition_seconds?)`
+
+```ts
+SetSkyState(
+  preset: "clear" | "cloudy" | "storm" | "sunset" | "night",
+  transition_seconds?: number   // default 5
+)
+```
+
+- **Tests:** instant property change with smooth transition. Lumen GI
+  re-bakes correctly when sky shifts. Remote Control can drive UE state.
+- **Schema:** one `SkyState` entity with overwrite semantics. New fact
+  invalidates the previous one (`valid_to = now`, new fact `valid_from = now`).
+- **Natural prompts:** *"make it stormy"*, *"sunset please"*, *"go dark"*
+
+### 2. `AdvanceTime(hours, speed_multiplier?)`
+
+```ts
+AdvanceTime(
+  hours: number,                  // world-hours to advance
+  speed_multiplier?: number       // 1 = real-time, 100 = "trees grow 100× speed"
+)
+```
+
+- **Tests:** temporal control. Forces the world-state graph to be properly
+  time-aware from day one (Graphiti's native model).
+- **Schema:** one `Clock` entity. Every other entity's facts get a
+  temporal envelope from this clock.
+- **Natural prompts:** *"skip to morning"*, *"speed everything up 100×"*,
+  *"a week passes"*
+
+### 3. `SpawnTrees(area, count, species, growth_stage?)`
+
+```ts
+SpawnTrees(
+  area: { center: Vec3, radius: number },
+  count: number,
+  species: "oak" | "pine" | "birch",
+  growth_stage?: "seedling" | "sapling" | "mature"   // default "mature"
+)
+```
+
+- **Tests:** **PCG runtime generation** — the killer UE 5.7 feature. LLM
+  tool call parameterizes a PCG graph at runtime. Entity lifecycle in the
+  world graph.
+- **Schema:** each spawned tree is a `Tree` entity with `species`,
+  `position`, `growth_stage`, `planted_at`. Growth stage evolves when
+  `AdvanceTime` runs.
+- **Natural prompts:** *"plant 50 oaks here"*, *"scatter pines along the
+  ridge"*, *"a forest of birch saplings"*
+
+### Versioning
+
+These are `WorldAPIv1`. We expect to add 5–10 more tools in Phase 2 once
+the inspector pages reveal what the LLM wishes existed. We may rename
+tools and bump to `WorldAPIv2`. This is normal — the contract is designed
+to evolve, not to be perfect on day one.
 
 ---
 
@@ -257,8 +331,20 @@ The goal of the MVP is to prove the full end-to-end loop works:
 
 ### Phase 0 — Foundation (sequential, must be done first)
 
-- [ ] **Monorepo bootstrap** — pnpm workspaces + uv (Python) workspaces, shared `justfile`
-- [ ] **`.cursor/rules/` populated** with R1, R2, R3, R4, R5
+- [x] **Monorepo bootstrap** — pnpm workspaces + uv (Python) workspaces ✅ 2026-06-01
+  - `package.json` + `pnpm-workspace.yaml` (TS workspace, root scripts)
+  - `pyproject.toml` (uv root; ruff/mypy/pytest configured; workspace members commented in, ready for Phase 0.4)
+  - `tsconfig.base.json` (strict mode, ES2022, bundler resolution)
+  - `.gitignore`, `.editorconfig`
+  - Placeholder dirs: `packages/`, `apps/`, `infra/` (with `.gitkeep`)
+  - Verified: `pnpm install` ✓, `uv sync` ✓ (`.venv` on Python 3.14)
+  - Deferred: `justfile` — npm scripts cover the current task surface; revisit if cross-language orchestration grows hairy
+- [x] **`.cursor/rules/` populated** with R1, R2, R3, R4, R5 ✅ 2026-06-01
+  - `shared-modules-only.mdc` (R1) — scoped to `apps/inspector/**`
+  - `interface-first-design.mdc` (R2) — scoped to `{packages,apps}/**/*.{ts,tsx,py}`
+  - `observable-boundaries.mdc` (R3) — scoped to `{packages,apps}/**/*.{ts,tsx,py}` (notes that `@boundary` arrives in Task 0.4)
+  - `one-source-of-truth-per-contract.mdc` (R4) — scoped to `{packages,apps}/**/*.{ts,tsx,py}` (notes that codegen arrives in Phase 2)
+  - `inspector-per-boundary.mdc` (R5) — scoped to `packages/**/*.{ts,tsx,py}`
 - [ ] **`packages/world-api/`** skeleton — first draft of the contract (one or two tools, e.g. `SetSkyColor`, `AdvanceTime`)
 - [ ] **`packages/tracing/`** — `@boundary` decorator + structured-log format
 - [ ] **`apps/inspector/`** skeleton with routing

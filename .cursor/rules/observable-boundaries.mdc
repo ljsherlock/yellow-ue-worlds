@@ -1,0 +1,48 @@
+---
+description: R3 — Every cross-package boundary call is wrapped in @boundary so the Pipeline Trace Viewer can render it
+globs: {packages,apps}/**/*.{ts,tsx,py}
+alwaysApply: false
+---
+
+# R3 — Observable boundaries
+
+Every method on a cross-package boundary interface (see R2) **must** be
+wrapped in the `@boundary` decorator (or its TS equivalent) from
+`packages/tracing/`. This emits a structured event the Pipeline Trace Viewer
+(inspector page 07) reads to render the full request lifecycle.
+
+No hidden state mutations across packages. If it crosses a boundary,
+it shows up in the trace.
+
+> Status (2026-06-01): `packages/tracing/` is created in Task 0.4. Until then,
+> mark boundary methods with a `// TODO(R3): wrap in @boundary` comment so
+> they're easy to find.
+
+## ❌ BAD
+
+```py
+# packages/memory-graph/src/graphiti_store.py
+class GraphitiStore:
+    async def write(self, fact: Fact) -> None:
+        await self._client.add_fact(fact)  # silent — no trace
+```
+
+## ✅ GOOD
+
+```py
+from yellow_ue.tracing import boundary
+
+class GraphitiStore:
+    @boundary(name="memory-graph.write")
+    async def write(self, fact: Fact) -> None:
+        await self._client.add_fact(fact)
+```
+
+## What `@boundary` emits
+
+- `name` — stable identifier (`<package>.<method>`)
+- `inputs` — args (PII-redacted by allow-list)
+- `output` or `error`
+- `start_ts`, `end_ts`, `trace_id`, `span_id`
+
+These flow into the structured log stream the Pipeline Trace Viewer consumes.

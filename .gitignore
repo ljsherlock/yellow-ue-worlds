@@ -1,0 +1,71 @@
+# --- Node / TypeScript ---
+node_modules/
+dist/
+build/
+.turbo/
+.next/
+.vite/
+.cache/
+.pnpm-store/
+*.tsbuildinfo
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.uv/
+
+# --- Environment ---
+.env
+.env.local
+.env.*.local
+# Keep templates checked in:
+!.env.example
+!.env.template
+
+# --- Logs ---
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editor / IDE ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Unreal Engine (for ue-project/) ---
+Saved/
+Intermediate/
+Binaries/
+DerivedDataCache/
+.vs/
+*.sln
+*.suo
+*.VC.db
+*.VC.opendb
+Build/Receipts/
+
+# --- Generated artifacts ---
+generated/
+*.gen.ts
+*.gen.py
+
+# --- Misc ---
+coverage/
+.nyc_output/

@@ -1,0 +1,52 @@
+---
+description: R2 — Cross-package boundaries are TypeScript interfaces / Python Protocols, implementations are injected
+globs: {packages,apps}/**/*.{ts,tsx,py}
+alwaysApply: false
+---
+
+# R2 — Interface-first design
+
+Every cross-package boundary is defined as a **TypeScript `interface`** or
+**Python `Protocol`** (a.k.a. structural type). Implementations are
+**injected** (constructor / factory / DI container), never `new`-ed inline
+by callers. This lets us swap real ↔ mock without touching consumers, which
+is the whole reason the inspector pages can exist.
+
+If a function reaches outside its own package and constructs something
+concrete, that's a violation.
+
+## ❌ BAD
+
+```ts
+// packages/llm-brain/src/agent.ts
+import { GraphitiStore } from "@yellow-ue/memory-graph/impl/graphiti";
+
+class Agent {
+  private memory = new GraphitiStore({ url: process.env.GRAPHITI_URL! });
+}
+```
+
+## ✅ GOOD
+
+```ts
+// packages/memory-graph/src/contract.ts
+export interface WorldMemoryStore {
+  write(fact: Fact): Promise<void>;
+  read(query: Query, at?: Timestamp): Promise<Fact[]>;
+}
+
+// packages/llm-brain/src/agent.ts
+import type { WorldMemoryStore } from "@yellow-ue/memory-graph";
+
+class Agent {
+  constructor(private readonly memory: WorldMemoryStore) {}
+}
+```
+
+Python: same idea with `typing.Protocol` + constructor injection.
+
+## Checklist when adding a boundary
+
+- [ ] Define `interface` (TS) / `Protocol` (Python) in the **owning** package
+- [ ] At least one real impl and one mock impl
+- [ ] Consumers depend on the interface only (`import type` in TS)
