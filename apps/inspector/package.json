@@ -15,6 +15,10 @@
   },
   "dependencies": {
     "@yellow-ue/llm-brain": "workspace:*",
+    "@yellow-ue/memory-graph": "workspace:*",
+    "@yellow-ue/pcg": "workspace:*",
+    "@yellow-ue/rc-bridge": "workspace:*",
+    "@yellow-ue/streaming": "workspace:*",
     "@yellow-ue/tracing": "workspace:*",
     "@yellow-ue/world-api": "workspace:*",
     "class-variance-authority": "^0.7.1",

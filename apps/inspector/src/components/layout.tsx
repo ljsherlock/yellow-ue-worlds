@@ -31,7 +31,7 @@ export function Layout() {
             <div className="mt-1 text-lg font-semibold leading-tight">
               Inspector
             </div>
-            <div className="text-xs text-muted">phase 0 — skeleton</div>
+            <div className="text-xs text-muted">phase 1 — all boundaries mocked</div>
           </NavLink>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">

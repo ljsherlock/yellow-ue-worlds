@@ -1,0 +1,30 @@
+{
+  "name": "@yellow-ue/rc-bridge",
+  "version": "0.0.1",
+  "private": true,
+  "description": "The RCBridge boundary — Unreal Remote Control transport + WorldAPICall→RC wire mapping. Phase 1 ships the interface + MockRCBridge; the real HTTP/WS transport lands in Phase 2 Track C.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mock": "./src/mock.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'lint configured later' && exit 0",
+    "format": "echo 'format configured later' && exit 0",
+    "build": "echo 'rc-bridge is consumed source-first; no build step' && exit 0"
+  },
+  "dependencies": {
+    "@yellow-ue/tracing": "workspace:*",
+    "@yellow-ue/world-api": "workspace:*",
+    "zod": "^4.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0"
+  }
+}

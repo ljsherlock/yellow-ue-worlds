@@ -20,7 +20,7 @@ state is persisted in a temporal knowledge graph so the world has memory.
 | Project rules | ✅ Complete 2026-06-01 | R1–R5 live in `.cursor/rules/` |
 | Monorepo bootstrap | ✅ Complete 2026-06-01 | pnpm 11.5.0 + uv (Python 3.14), workspace scaffolded |
 | Phase 0 — Foundation | ✅ Complete 2026-06-01 | Workspace + rules + `world-api` + `tracing` + inspector skeleton + page 07 keystone, 52 tests green |
-| Inspector pages 01–06 | ⏳ Not started | Phase 1 of MVP plan |
+| Phase 1 — Inspector pages 01–07 | ✅ Complete 2026-06-01 | All boundaries mocked behind R2 interfaces; 7 live pages; 94 tests green |
 | Real components | ⏳ Not started | Phase 2 of MVP plan |
 | GCP infrastructure | ⏳ Not started | Phase 3 of MVP plan |
 | End-to-end loop | ⏳ Not started | Phase 4 of MVP plan |
@@ -389,11 +389,28 @@ The goal of the MVP is to prove the full end-to-end loop works:
   - `complete()` boundary-wrapped as `llm-brain.complete` (R3); 17 tests pass
   - Page 01 is a live prompt bench: type a prompt → see tool calls, reasoning, tokens, finishReason, boundary latency. Example-prompt chips included.
   - Note: real brain is Python (LangGraph) in Phase 2 Track A; the TS side gains `BrainHttpClient implements LLMClient` then — page 01 swaps mock→http with no other change
-- [ ] **02** World State Graph (mock Graphiti store)
-- [ ] **03** World API Mock Bench (in-memory fake UE)
-- [ ] **04** RC Round-Trip (mock RC transport, real wire format)
-- [ ] **05** PCG Inspector (mock PCG output)
-- [ ] **06** Streaming Diagnostics (mock metrics)
+- [x] **02** World State Graph (mock Graphiti store) ✅ 2026-06-01
+  - New package `@yellow-ue/memory-graph`: `WorldMemoryStore` interface (R2) + `MockWorldMemoryStore` (in-memory **bitemporal** log on the world-time axis)
+  - Overwrite semantics: writing a new fact for the same `(entityId, type)` closes the prior one (`validTo`) and records `invalidates`; `snapshotAt(t)` returns facts valid at world-time `t`
+  - `seedDemoWorld()` fixture gives a scrubable timeline (sky clear→storm→sunset, oaks seedling→sapling→mature); `write`/`read`/`snapshotAt`/`history` boundary-wrapped (`memory-graph.*`)
+  - Page 02: world-time slider → snapshot of valid facts + a gantt-style validity-span timeline with a playhead. Real Graphiti adapter lands in Phase 2 Track B with the same interface.
+- [x] **03** World API Mock Bench (in-memory fake UE) ✅ 2026-06-01
+  - `MockWorldAPIClient` from `@yellow-ue/world-api/mock`; live bench to call `SetSkyState`/`AdvanceTime`/`SpawnTrees` and watch in-memory world state mutate
+- [x] **04** RC Round-Trip (mock RC transport, real wire format) ✅ 2026-06-01
+  - New package `@yellow-ue/rc-bridge`: `RCBridge` interface (R2) + `MockRCBridge` + `toRCFunctionCall` mapping (WorldAPICall → RC function call)
+  - Produces the exact UE Remote Control wire request (`PUT /remote/object/call`), simulates latency (jitter 80–160ms) and failures; `rc-bridge.*` boundary-wrapped
+  - ⚠️ Wire format modeled after UE Remote Control but **not yet verified against UE 5.7** — verified in Phase 2 Track C against a running engine
+  - Page 04: pick a tool call → see the wire request → send → response + latency log; failure-simulation toggle
+- [x] **05** PCG Inspector (mock PCG output) ✅ 2026-06-01
+  - New package `@yellow-ue/pcg`: `PCGRunner` interface (R2) + `MockPCGRunner` (seeded deterministic disk scatter) + `spawnTreesToPCGRequest` mapping
+  - Same seed ⇒ same point cloud; scale tracks growth stage; `pcg.run` boundary-wrapped
+  - Page 05: parameter sliders (count/radius/seed/species/growth) → top-down SVG scatter + first-8 point dump. Real UE PCG runner lands in Phase 2 Track D.
+- [x] **06** Streaming Diagnostics (mock metrics) ✅ 2026-06-01
+  - New package `@yellow-ue/streaming`: `StreamingMetrics` interface (R2) + `MockStreamingMetrics` (synthetic samples wandering around 8Mbps / 60fps / 35ms RTT)
+  - `connect()` is the traced boundary (`streaming.connect`, models WebRTC negotiation); the per-sample `subscribe()` stream is telemetry, **deliberately not traced** (the one boundary where request/response `boundary()` doesn't fit — documented in the package)
+  - Page 06: live sparklines (bitrate / FPS / RTT / packet loss) with threshold coloring + pause/resume. Real `RTCPeerConnection.getStats()` adapter lands in Phase 3.
+
+**Phase 1 complete ✅ 2026-06-01** — all seven inspector pages live against real package boundaries (R1), 94 tests green, inspector builds + typechecks clean.
 
 ### Phase 2 — Real implementations (four parallel tracks)
 
