@@ -361,7 +361,15 @@ The goal of the MVP is to prove the full end-to-end loop works:
   - Wired into `MockWorldAPIClient` — all 4 methods now emit events. R3's TODOs in mock.ts replaced.
   - 19 tracing tests + 5 integration tests in world-api. **47 tests total green across the workspace.**
   - Known limitation: module-level span stack works only for single-flight execution. Multi-tenant server in Phase 2 swaps to `AsyncLocalStorage`.
-- [ ] **`apps/inspector/`** skeleton with routing
+- [x] **`apps/inspector/`** skeleton with routing ✅ 2026-06-01
+  - Stack: Vite 8 + React 19 + React Router 7 + Tailwind CSS 4 + shadcn-style components (hand-rolled Button + Card)
+  - 8 routes: `/` overview, `/01`…`/07` for each boundary
+  - Path alias `@/*` → `apps/inspector/src/*` (TS paths + Vite resolve)
+  - Layout shell with sidebar nav, active-state highlighting
+  - Page 03 (World API Mock Bench) is **live** — imports `MockWorldAPIClient` from `@yellow-ue/world-api/mock`, drives it from the UI, renders boundary events from the `@yellow-ue/tracing` `InMemorySink`. This page proves the full stack works end-to-end and verifies R1, R2, R3 are all enforced.
+  - Pages 01, 02, 04, 05, 06, 07 are intentional stubs — they declare the boundary they'll cover and point to the future package
+  - Home page renders `WORLD_API_VERSION` from the world-api package as a workspace-link sanity check
+  - Build verified: typecheck clean, `pnpm build` produces 123 kB gzipped, `pnpm dev` boots in 120ms, dev server resolves workspace package imports correctly via `/@fs/...` links
 - [ ] **Inspector page 07 (Pipeline Trace Viewer)** with mock data flowing through all stages
 
 ### Phase 1 — Inspector pages with mock data (parallelizable)

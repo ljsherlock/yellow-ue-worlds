@@ -1,0 +1,36 @@
+{
+  "name": "@yellow-ue/inspector",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Inspector — the test/debug surface for every cross-package boundary in yellow-ue-worlds. Inspector-first development per project rule R5.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'inspector tests added per page' && exit 0",
+    "lint": "echo 'lint configured later' && exit 0",
+    "format": "echo 'format configured later' && exit 0"
+  },
+  "dependencies": {
+    "@yellow-ue/tracing": "workspace:*",
+    "@yellow-ue/world-api": "workspace:*",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router": "^7.16.0",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.0"
+  }
+}
