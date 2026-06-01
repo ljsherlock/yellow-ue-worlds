@@ -19,7 +19,8 @@ state is persisted in a temporal knowledge graph so the world has memory.
 | GCP L4 quota | ✅ Confirmed 2026-06-01 | 16 on-demand + 16 preemptible in `us-central1`, project `task-assistant-project`. No request needed for MVP. |
 | Project rules | ✅ Complete 2026-06-01 | R1–R5 live in `.cursor/rules/` |
 | Monorepo bootstrap | ✅ Complete 2026-06-01 | pnpm 11.5.0 + uv (Python 3.14), workspace scaffolded |
-| Inspector pages | ⏳ Not started | Phase 1 of MVP plan |
+| Phase 0 — Foundation | ✅ Complete 2026-06-01 | Workspace + rules + `world-api` + `tracing` + inspector skeleton + page 07 keystone, 52 tests green |
+| Inspector pages 01–06 | ⏳ Not started | Phase 1 of MVP plan |
 | Real components | ⏳ Not started | Phase 2 of MVP plan |
 | GCP infrastructure | ⏳ Not started | Phase 3 of MVP plan |
 | End-to-end loop | ⏳ Not started | Phase 4 of MVP plan |
@@ -370,7 +371,15 @@ The goal of the MVP is to prove the full end-to-end loop works:
   - Pages 01, 02, 04, 05, 06, 07 are intentional stubs — they declare the boundary they'll cover and point to the future package
   - Home page renders `WORLD_API_VERSION` from the world-api package as a workspace-link sanity check
   - Build verified: typecheck clean, `pnpm build` produces 123 kB gzipped, `pnpm dev` boots in 120ms, dev server resolves workspace package imports correctly via `/@fs/...` links
-- [ ] **Inspector page 07 (Pipeline Trace Viewer)** with mock data flowing through all stages
+- [x] **Inspector page 07 (Pipeline Trace Viewer)** with mock data ✅ 2026-06-01
+  - `TraceBuilder` added to `@yellow-ue/tracing` (generic span synthesizer; 5 new tests)
+  - Two scenarios in `apps/inspector/src/lib/mock-traces.ts`: "make it stormy" success (11 spans across 5 packages) and "plant 50 oaks" RC-timeout error (6 spans, end-to-end failure)
+  - `TraceTree` — recursive nested view with depth indent + per-package colour + status pill
+  - `TraceWaterfall` — bar chart with start offset + duration scaled to trace bounds; visually highlights the long pole on errors
+  - `EventDetail` — click any span to see trace/span/parent ids, timing, inputs, output, error payload, stack
+  - Toggle between waterfall / tree views; scenario picker at top
+  - Renderers accept any `BoundaryEvent[]` — when real backends arrive in Phase 2, the same components render real traces by reading from `InMemorySink` instead of `scenarios[…].build()`
+  - 52 tests green workspace-wide (24 tracing + 28 world-api); inspector typecheck clean; build 412 kB raw / 127 kB gzipped
 
 ### Phase 1 — Inspector pages with mock data (parallelizable)
 

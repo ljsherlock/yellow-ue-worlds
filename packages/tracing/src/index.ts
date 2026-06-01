@@ -10,3 +10,4 @@ export {
 } from "./boundary.js";
 export { ConsoleSink, InMemorySink, MultiSink, NoopSink } from "./sinks.js";
 export { generateId } from "./id.js";
+export { TraceBuilder, type AddSpanInput } from "./fixtures.js";
