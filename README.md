@@ -345,7 +345,13 @@ The goal of the MVP is to prove the full end-to-end loop works:
   - `observable-boundaries.mdc` (R3) — scoped to `{packages,apps}/**/*.{ts,tsx,py}` (notes that `@boundary` arrives in Task 0.4)
   - `one-source-of-truth-per-contract.mdc` (R4) — scoped to `{packages,apps}/**/*.{ts,tsx,py}` (notes that codegen arrives in Phase 2)
   - `inspector-per-boundary.mdc` (R5) — scoped to `packages/**/*.{ts,tsx,py}`
-- [ ] **`packages/world-api/`** skeleton — first draft of the contract (one or two tools, e.g. `SetSkyColor`, `AdvanceTime`)
+- [x] **`packages/world-api/`** — first draft of `WorldAPIv1` contract ✅ 2026-06-01
+  - Schema layer: **Zod 4.4** (chosen for runtime validation + JSON Schema codegen path + native LLM-tooling integration)
+  - All 3 tools defined: `SetSkyState`, `AdvanceTime`, `SpawnTrees`
+  - `WorldAPIClient` interface (R2) with `dispatch()` for LLM-driven discriminated calls
+  - `MockWorldAPIClient` impl with realistic in-memory world state (sky, world-time, trees with toy growth model) — ready for inspector pages to consume per R1
+  - Test runner: **Vitest 4.1**. 23 tests pass; typecheck clean
+  - Boundary tracing marked with `// TODO(R3): wrap in @boundary` comments — gets fulfilled in Task 0.4
 - [ ] **`packages/tracing/`** — `@boundary` decorator + structured-log format
 - [ ] **`apps/inspector/`** skeleton with routing
 - [ ] **Inspector page 07 (Pipeline Trace Viewer)** with mock data flowing through all stages
