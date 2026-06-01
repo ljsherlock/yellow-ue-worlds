@@ -383,7 +383,12 @@ The goal of the MVP is to prove the full end-to-end loop works:
 
 ### Phase 1 — Inspector pages with mock data (parallelizable)
 
-- [ ] **01** Prompt → Tool Calls (mock LLM client)
+- [x] **01** Prompt → Tool Calls (mock LLM client) ✅ 2026-06-01
+  - New package `@yellow-ue/llm-brain`: `LLMClient` interface (R2) + `MockLLMClient` (deterministic, rules-based)
+  - Mock keyword-maps prompts to `WorldAPICall[]` (sky / time / trees), reusing `WorldAPICallSchema` from world-api (R4); validates its own output
+  - `complete()` boundary-wrapped as `llm-brain.complete` (R3); 17 tests pass
+  - Page 01 is a live prompt bench: type a prompt → see tool calls, reasoning, tokens, finishReason, boundary latency. Example-prompt chips included.
+  - Note: real brain is Python (LangGraph) in Phase 2 Track A; the TS side gains `BrainHttpClient implements LLMClient` then — page 01 swaps mock→http with no other change
 - [ ] **02** World State Graph (mock Graphiti store)
 - [ ] **03** World API Mock Bench (in-memory fake UE)
 - [ ] **04** RC Round-Trip (mock RC transport, real wire format)

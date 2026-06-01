@@ -14,6 +14,7 @@
     "format": "echo 'format configured later' && exit 0"
   },
   "dependencies": {
+    "@yellow-ue/llm-brain": "workspace:*",
     "@yellow-ue/tracing": "workspace:*",
     "@yellow-ue/world-api": "workspace:*",
     "class-variance-authority": "^0.7.1",
