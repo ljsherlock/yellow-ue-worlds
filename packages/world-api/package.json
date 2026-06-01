@@ -19,6 +19,7 @@
     "build": "echo 'world-api is consumed source-first; no build step' && exit 0"
   },
   "dependencies": {
+    "@yellow-ue/tracing": "workspace:*",
     "zod": "^4.4.0"
   },
   "devDependencies": {

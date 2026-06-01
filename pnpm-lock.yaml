@@ -8,8 +8,20 @@ importers:
 
   .: {}
 
+  packages/tracing:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.7(vite@8.0.14)
+
   packages/world-api:
     dependencies:
+      '@yellow-ue/tracing':
+        specifier: workspace:*
+        version: link:../tracing
       zod:
         specifier: ^4.4.0
         version: 4.4.3

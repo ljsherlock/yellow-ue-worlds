@@ -1,0 +1,24 @@
+{
+  "name": "@yellow-ue/tracing",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Boundary tracing for the yellow-ue-worlds pipeline. Wraps cross-package calls in observable events the Pipeline Trace Viewer consumes. Enforces R3.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'lint configured later' && exit 0",
+    "format": "echo 'format configured later' && exit 0",
+    "build": "echo 'tracing is consumed source-first; no build step' && exit 0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0"
+  }
+}

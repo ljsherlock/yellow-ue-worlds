@@ -352,7 +352,15 @@ The goal of the MVP is to prove the full end-to-end loop works:
   - `MockWorldAPIClient` impl with realistic in-memory world state (sky, world-time, trees with toy growth model) — ready for inspector pages to consume per R1
   - Test runner: **Vitest 4.1**. 23 tests pass; typecheck clean
   - Boundary tracing marked with `// TODO(R3): wrap in @boundary` comments — gets fulfilled in Task 0.4
-- [ ] **`packages/tracing/`** — `@boundary` decorator + structured-log format
+- [x] **`packages/tracing/`** — `boundary()` HOF + structured event format ✅ 2026-06-01
+  - TS `boundary("name", fn)` higher-order wrapper (works on methods, arrows, top-level functions)
+  - Python `@boundary(name=…)` decorator arrives with `packages/llm-brain/` in Phase 2 (equivalent semantics)
+  - `BoundaryEvent` shape: `trace_id`, `span_id`, `parent_span_id`, `name`, `status`, `start_ts`, `end_ts`, `duration_ms`, `inputs`, `output`/`error`
+  - Sinks: `InMemorySink` (inspector/tests), `ConsoleSink` (dev), `NoopSink` (prod), `MultiSink` (fan-out)
+  - `withTrace(id, fn)` for grouping a logical request's spans
+  - Wired into `MockWorldAPIClient` — all 4 methods now emit events. R3's TODOs in mock.ts replaced.
+  - 19 tracing tests + 5 integration tests in world-api. **47 tests total green across the workspace.**
+  - Known limitation: module-level span stack works only for single-flight execution. Multi-tenant server in Phase 2 swaps to `AsyncLocalStorage`.
 - [ ] **`apps/inspector/`** skeleton with routing
 - [ ] **Inspector page 07 (Pipeline Trace Viewer)** with mock data flowing through all stages
 

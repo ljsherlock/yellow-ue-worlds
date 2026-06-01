@@ -1,5 +1,5 @@
 ---
-description: R3 — Every cross-package boundary call is wrapped in @boundary so the Pipeline Trace Viewer can render it
+description: R3 — Every cross-package boundary call is wrapped in boundary() / @boundary so the Pipeline Trace Viewer can render it
 globs: {packages,apps}/**/*.{ts,tsx,py}
 alwaysApply: false
 ---
@@ -7,27 +7,46 @@ alwaysApply: false
 # R3 — Observable boundaries
 
 Every method on a cross-package boundary interface (see R2) **must** be
-wrapped in the `@boundary` decorator (or its TS equivalent) from
-`packages/tracing/`. This emits a structured event the Pipeline Trace Viewer
-(inspector page 07) reads to render the full request lifecycle.
+wrapped in a tracing wrapper from `@yellow-ue/tracing` (TS) or
+`yellow_ue.tracing` (Python, Phase 2). This emits a structured event the
+Pipeline Trace Viewer (inspector page 07) reads to render the full request
+lifecycle.
 
 No hidden state mutations across packages. If it crosses a boundary,
 it shows up in the trace.
 
-> Status (2026-06-01): `packages/tracing/` is created in Task 0.4. Until then,
-> mark boundary methods with a `// TODO(R3): wrap in @boundary` comment so
-> they're easy to find.
+- **TypeScript:** `boundary("name", fn)` — higher-order function. Works on
+  arrow methods, top-level functions, anywhere.
+- **Python (Phase 2):** `@boundary(name="…")` — decorator.
 
-## ❌ BAD
+The two are functionally equivalent — same event shape, same semantics —
+only the syntax differs because Python decorators apply on definition and
+TS Stage-3 decorators are class-member-only.
 
-```py
-# packages/memory-graph/src/graphiti_store.py
-class GraphitiStore:
-    async def write(self, fact: Fact) -> None:
-        await self._client.add_fact(fact)  # silent — no trace
+## ❌ BAD (TS)
+
+```ts
+class MockWorldAPIClient {
+  async setSkyState(args: SetSkyStateArgs) {
+    return this._impl(args); // silent — no trace
+  }
+}
 ```
 
-## ✅ GOOD
+## ✅ GOOD (TS)
+
+```ts
+import { boundary } from "@yellow-ue/tracing";
+
+class MockWorldAPIClient {
+  setSkyState = boundary(
+    "world-api.setSkyState",
+    async (args: SetSkyStateArgs) => { /* ... */ },
+  );
+}
+```
+
+## ✅ GOOD (Python, Phase 2)
 
 ```py
 from yellow_ue.tracing import boundary
@@ -38,11 +57,22 @@ class GraphitiStore:
         await self._client.add_fact(fact)
 ```
 
-## What `@boundary` emits
+## What the wrapper emits
 
 - `name` — stable identifier (`<package>.<method>`)
-- `inputs` — args (PII-redacted by allow-list)
-- `output` or `error`
-- `start_ts`, `end_ts`, `trace_id`, `span_id`
+- `trace_id` / `span_id` / `parent_span_id` — for nesting
+- `status` — `"ok"` or `"error"`
+- `inputs` — args (post-redaction)
+- `output` — return value, OR `error` — `{ message, stack }`
+- `start_ts`, `end_ts`, `duration_ms`
 
-These flow into the structured log stream the Pipeline Trace Viewer consumes.
+These flow into the structured event stream the Pipeline Trace Viewer
+consumes.
+
+## Semantics note: `Result<T,E>` envelopes are still `status: "ok"`
+
+The wrapper records `status: "error"` only when the wrapped function
+*throws*. If your method returns a `Result<T,E>` envelope with
+`{ ok: false, error: … }`, that's a successful boundary call that
+reported an application-level error — and the inspector renders both
+layers.

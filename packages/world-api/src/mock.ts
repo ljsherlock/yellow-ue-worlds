@@ -1,3 +1,5 @@
+import { boundary } from "@yellow-ue/tracing";
+
 import type { WorldAPIClient } from "./client.js";
 import {
   AdvanceTimeArgsSchema,
@@ -25,6 +27,9 @@ import {
  *    against a fake UE without standing up a GPU instance.
  * 2. The Brain (LangGraph agent) can be developed and tested against this
  *    before the RC bridge exists.
+ *
+ * Every cross-package method is wrapped in `boundary()` (R3) so the
+ * Pipeline Trace Viewer can render the call lifecycle.
  *
  * The mock maintains plausible world state so the inspector renders something
  * meaningful: trees persist, time advances, the sky remembers its last preset.
@@ -78,104 +83,125 @@ export class MockWorldAPIClient implements WorldAPIClient {
     };
   }
 
-  // TODO(R3): wrap in @boundary once packages/tracing/ lands (Task 0.4)
-  async setSkyState(
-    args: SetSkyStateArgs,
-  ): Promise<WorldAPIResult<SetSkyStateResult>> {
-    const parsed = SetSkyStateArgsSchema.safeParse(args);
-    if (!parsed.success) {
-      return err({
-        code: "INVALID_ARGS",
-        message: "setSkyState received invalid arguments",
-        details: parsed.error.issues,
-      });
-    }
-    const previous = this.state.sky;
-    this.state.sky = parsed.data.preset;
-    return ok<SetSkyStateResult>({
-      previous,
-      current: parsed.data.preset,
-      transition_seconds: parsed.data.transition_seconds,
-      applied_at: this.now().toISOString(),
-    });
-  }
+  // R3: class-field arrow + boundary() — `this` is captured at field init
+  // and resolved at call time, so this.state etc. are always the live
+  // instance state by the time the boundary fires.
 
-  // TODO(R3): wrap in @boundary once packages/tracing/ lands (Task 0.4)
-  async advanceTime(
-    args: AdvanceTimeArgs,
-  ): Promise<WorldAPIResult<AdvanceTimeResult>> {
-    const parsed = AdvanceTimeArgsSchema.safeParse(args);
-    if (!parsed.success) {
-      return err({
-        code: "INVALID_ARGS",
-        message: "advanceTime received invalid arguments",
-        details: parsed.error.issues,
+  setSkyState = boundary(
+    "world-api.setSkyState",
+    async (
+      args: SetSkyStateArgs,
+    ): Promise<WorldAPIResult<SetSkyStateResult>> => {
+      const parsed = SetSkyStateArgsSchema.safeParse(args);
+      if (!parsed.success) {
+        return err({
+          code: "INVALID_ARGS",
+          message: "setSkyState received invalid arguments",
+          details: parsed.error.issues,
+        });
+      }
+      const previous = this.state.sky;
+      this.state.sky = parsed.data.preset;
+      return ok<SetSkyStateResult>({
+        previous,
+        current: parsed.data.preset,
+        transition_seconds: parsed.data.transition_seconds,
+        applied_at: this.now().toISOString(),
       });
-    }
-    const previous = this.state.worldTimeHours;
-    this.state.worldTimeHours = previous + parsed.data.hours;
-    this.state.trees = this.state.trees.map((tree) =>
-      growTree(tree, parsed.data.hours),
-    );
-    return ok<AdvanceTimeResult>({
-      previous_world_time_hours: previous,
-      current_world_time_hours: this.state.worldTimeHours,
-      hours_advanced: parsed.data.hours,
-      speed_multiplier: parsed.data.speed_multiplier,
-      applied_at: this.now().toISOString(),
-    });
-  }
+    },
+  );
 
-  // TODO(R3): wrap in @boundary once packages/tracing/ lands (Task 0.4)
-  async spawnTrees(
-    args: SpawnTreesArgs,
-  ): Promise<WorldAPIResult<SpawnTreesResult>> {
-    const parsed = SpawnTreesArgsSchema.safeParse(args);
-    if (!parsed.success) {
-      return err({
-        code: "INVALID_ARGS",
-        message: "spawnTrees received invalid arguments",
-        details: parsed.error.issues,
+  advanceTime = boundary(
+    "world-api.advanceTime",
+    async (
+      args: AdvanceTimeArgs,
+    ): Promise<WorldAPIResult<AdvanceTimeResult>> => {
+      const parsed = AdvanceTimeArgsSchema.safeParse(args);
+      if (!parsed.success) {
+        return err({
+          code: "INVALID_ARGS",
+          message: "advanceTime received invalid arguments",
+          details: parsed.error.issues,
+        });
+      }
+      const previous = this.state.worldTimeHours;
+      this.state.worldTimeHours = previous + parsed.data.hours;
+      this.state.trees = this.state.trees.map((tree) =>
+        growTree(tree, parsed.data.hours),
+      );
+      return ok<AdvanceTimeResult>({
+        previous_world_time_hours: previous,
+        current_world_time_hours: this.state.worldTimeHours,
+        hours_advanced: parsed.data.hours,
+        speed_multiplier: parsed.data.speed_multiplier,
+        applied_at: this.now().toISOString(),
       });
-    }
-    const { area, count, species, growth_stage } = parsed.data;
-    const spawned: SpawnedTree[] = [];
-    for (let i = 0; i < count; i += 1) {
-      // deterministic placement when randomId is deterministic — important
-      // for inspector snapshot testing
-      const angle = (i / count) * Math.PI * 2;
-      const r = area.radius * Math.sqrt((i + 1) / count);
-      spawned.push({
-        id: this.randomId(),
-        position: {
-          x: area.center.x + Math.cos(angle) * r,
-          y: area.center.y + Math.sin(angle) * r,
-          z: area.center.z,
-        },
-        species,
-        growth_stage,
-        planted_at_world_time_hours: this.state.worldTimeHours,
-      });
-    }
-    this.state.trees.push(...spawned);
-    return ok<SpawnTreesResult>({
-      spawned,
-      count: spawned.length,
-      applied_at: this.now().toISOString(),
-    });
-  }
+    },
+  );
 
-  // TODO(R3): wrap in @boundary once packages/tracing/ lands (Task 0.4)
-  async dispatch(call: WorldAPICall): Promise<WorldAPIDispatchResult> {
-    switch (call.tool) {
-      case "SetSkyState":
-        return { tool: "SetSkyState", result: await this.setSkyState(call.args) };
-      case "AdvanceTime":
-        return { tool: "AdvanceTime", result: await this.advanceTime(call.args) };
-      case "SpawnTrees":
-        return { tool: "SpawnTrees", result: await this.spawnTrees(call.args) };
-    }
-  }
+  spawnTrees = boundary(
+    "world-api.spawnTrees",
+    async (
+      args: SpawnTreesArgs,
+    ): Promise<WorldAPIResult<SpawnTreesResult>> => {
+      const parsed = SpawnTreesArgsSchema.safeParse(args);
+      if (!parsed.success) {
+        return err({
+          code: "INVALID_ARGS",
+          message: "spawnTrees received invalid arguments",
+          details: parsed.error.issues,
+        });
+      }
+      const { area, count, species, growth_stage } = parsed.data;
+      const spawned: SpawnedTree[] = [];
+      for (let i = 0; i < count; i += 1) {
+        // deterministic placement when randomId is deterministic — important
+        // for inspector snapshot testing
+        const angle = (i / count) * Math.PI * 2;
+        const r = area.radius * Math.sqrt((i + 1) / count);
+        spawned.push({
+          id: this.randomId(),
+          position: {
+            x: area.center.x + Math.cos(angle) * r,
+            y: area.center.y + Math.sin(angle) * r,
+            z: area.center.z,
+          },
+          species,
+          growth_stage,
+          planted_at_world_time_hours: this.state.worldTimeHours,
+        });
+      }
+      this.state.trees.push(...spawned);
+      return ok<SpawnTreesResult>({
+        spawned,
+        count: spawned.length,
+        applied_at: this.now().toISOString(),
+      });
+    },
+  );
+
+  dispatch = boundary(
+    "world-api.dispatch",
+    async (call: WorldAPICall): Promise<WorldAPIDispatchResult> => {
+      switch (call.tool) {
+        case "SetSkyState":
+          return {
+            tool: "SetSkyState",
+            result: await this.setSkyState(call.args),
+          };
+        case "AdvanceTime":
+          return {
+            tool: "AdvanceTime",
+            result: await this.advanceTime(call.args),
+          };
+        case "SpawnTrees":
+          return {
+            tool: "SpawnTrees",
+            result: await this.spawnTrees(call.args),
+          };
+      }
+    },
+  );
 }
 
 const STAGE_ORDER: ReadonlyArray<SpawnedTree["growth_stage"]> = [
@@ -189,8 +215,7 @@ const STAGE_ORDER: ReadonlyArray<SpawnedTree["growth_stage"]> = [
 // when AdvanceTime is called.
 function growTree(tree: SpawnedTree, hoursAdvanced: number): SpawnedTree {
   const ageHours =
-    Math.max(0, hoursAdvanced) +
-    estimateAgeFromStage(tree.growth_stage);
+    Math.max(0, hoursAdvanced) + estimateAgeFromStage(tree.growth_stage);
   let stage: SpawnedTree["growth_stage"] = "seedling";
   if (ageHours >= 24 * 7) stage = "mature";
   else if (ageHours >= 24) stage = "sapling";
