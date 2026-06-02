@@ -16,6 +16,7 @@
     "ue:build": "bash scripts/vm.sh build",
     "ue:run": "bash scripts/vm.sh run",
     "ue:run:rc": "bash scripts/vm.sh run-rc",
+    "ue:rc-tunnel": "bash scripts/vm.sh rc-tunnel",
     "ue:stop-app": "bash scripts/vm.sh stop-app",
     "ue:logs": "bash scripts/vm.sh logs",
     "ue:logs:app": "bash scripts/vm.sh logs-app",

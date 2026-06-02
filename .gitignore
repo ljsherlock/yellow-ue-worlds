@@ -2,6 +2,10 @@
 node_modules/
 dist/
 build/
+# ...but the UE VM build scripts live in ue/build/ and MUST be tracked
+# (a blanket build/ rule silently dropped build-in-container.sh once before).
+!ue/build/
+!ue/build/**
 .turbo/
 .next/
 .vite/

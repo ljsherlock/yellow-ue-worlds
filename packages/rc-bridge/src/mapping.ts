@@ -4,11 +4,12 @@ import type { RCFunctionCall } from "./contract.js";
 
 /**
  * The object path of the world director actor that exposes the world-API
- * functions to Remote Control. Provisional — confirmed when the UE project
- * is built (Phase 2 Track D).
+ * functions to Remote Control. Confirmed against the built spike level
+ * (make_map.py spawns AWorldDirector into /Game/Maps/Spike). Override per-call
+ * with the CLI `--path` flag or the RC_OBJECT_PATH env var.
  */
 export const WORLD_DIRECTOR_PATH =
-  "/Game/Worlds/MainWorld.MainWorld:PersistentLevel.WorldDirector_0";
+  "/Game/Maps/Spike.Spike:PersistentLevel.WorldDirector_0";
 
 /**
  * Translate a high-level `WorldAPICall` into the low-level Remote Control

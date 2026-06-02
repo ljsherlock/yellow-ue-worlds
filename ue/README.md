@@ -24,7 +24,7 @@ everything builds and runs in Epic's official Linux containers on a GCP L4 VM.
 | UE project skeleton (`WorldDirector`, plugins) | ✅ built |
 | Build-in-container + run/stream scripts | ✅ working |
 | **Spike 1a — stream UE 5.7 from GCP GPU to browser** | ✅ **PROVEN 2026-06-02** |
-| Spike 1b — drive `WorldDirector` over Remote Control | ⏳ next |
+| **Spike 1b — drive `WorldDirector` over Remote Control** | ✅ **PROVEN 2026-06-02** |
 | L4 perf/cost benchmark | ⏳ later (capacity-blocked; ran on T4) |
 
 ### Spike 1a result (2026-06-02)
@@ -35,6 +35,17 @@ us-central1/us-east4/us-west1), so we fell back to a T4 — it does H.264 NVENC,
 which fully de-risks the *pipeline*. L4-specific perf/bitrate/AV1 numbers for the
 **cost model** are deferred until L4 capacity returns.
 
+### Spike 1b result (2026-06-02)
+
+Drove `WorldDirector.SetSkyState(SunPitchDegrees, CloudCover, FogDensity)` on the
+live packaged build over Remote Control (`-RCWebControlEnable`, HTTP :30010) and
+watched the sun rotate in the stream. Transport is `HttpRCBridge` in
+`packages/rc-bridge` (real `fetch`, `PUT /remote/object/call`), driven by its
+`tsx` CLI. RC is unauthenticated so 30010 is **not** in the firewall — access is
+via `npm run ue:rc-tunnel` (`ssh -L 30010:localhost:30010`), bridge hits
+`http://127.0.0.1:30010`. Object path: `/Game/Maps/Spike.Spike:PersistentLevel.WorldDirector_0`
+(override with `RC_OBJECT_PATH` / `--path`).
+
 Hard-won operational notes (folded into the scripts):
 - GPU driver via GCP's `cuda_installer.pyz`, not `ubuntu-drivers` (matches `-gcp` kernel; reboots once).
 - Startup `gpg --dearmor` needs `--no-tty`; install Docker via `get.docker.com`.
@@ -42,6 +53,53 @@ Hard-won operational notes (folded into the scripts):
 - Bind-mounted project must be owned by `ue4` (uid 1000) to build — `build-in-container.sh` now chowns to `ue4` for the build and **restores it to your user on exit** (trap), so no manual chown to run/sync/edit afterward.
 - PS2 launch arg is `-PixelStreamingSignallingURL`; the 5.7 Cirrus server rejects `--publicIp` (STUN handles the public candidate).
 - Level lights must be **Movable** (no lightmap bake headless; also required for runtime sun control).
+
+## World controls — Tier 1 verb surface (2026-06-02)
+
+`WorldDirector` now exposes the full **asset-free** control surface. Every verb
+mutates a stock engine actor that `make_map.py` spawns into `/Game/Maps/Spike`
+(DirectionalLight, SkyLight, ExponentialHeightFog, VolumetricCloud,
+WindDirectionalSource, an unbound PostProcessVolume, a CameraActor) or the
+procedural sand ground material — **no imported art required**.
+
+Drive them from the Mac (after `ue:run:rc` + `ue:rc-tunnel`), from
+`packages/rc-bridge/`:
+
+```bash
+pnpm cli -- ping                       # connectivity (GET /remote/info)
+pnpm cli -- preset --name sunset       # one-shot mood (clear|cloudy|storm|sunset|night|dusty|misty)
+
+# atmosphere
+pnpm cli -- time     --hours 18
+pnpm cli -- sun      --lux 35000 --kelvin 2400
+pnpm cli -- skylight --intensity 0.8
+pnpm cli -- fog      --density 0.05 --falloff 0.2
+pnpm cli -- fogcolor --r 0.8 --g 0.5 --b 0.3
+pnpm cli -- vfog     --on
+pnpm cli -- cloud    --coverage 0.8
+pnpm cli -- wind     --dir 90 --strength 0.6 --speed 0.2
+
+# ground (procedural sand material; tan=dry, olive=greener)
+pnpm cli -- ground   --r 0.52 --g 0.42 --b 0.26
+
+# look / framing (colour grade + camera)
+pnpm cli -- exposure --ev -0.5
+pnpm cli -- grade    --kelvin 3200 --sat 1.2 --contrast 1.05
+pnpm cli -- camera   --view aerial         # aerial|ground|wide|closeup|default
+pnpm cli -- fov      --deg 60
+
+# escape hatch — call any BlueprintCallable fn directly
+pnpm cli -- call --fn SetColorGrade --params '{"WhiteTemp":7000,"Saturation":0.85,"Contrast":0.95}'
+```
+
+> **Ground:** options A/B (procedural sand material, runtime-recolourable) ship
+> now. Option C (undulating **Landscape** from a noise heightmap) is a deliberate
+> fast-follow — authoring a Landscape in the *headless* commandlet is the one
+> fragile piece, kept separate so it can't break the base rebuild.
+>
+> **Clouds:** the layer renders with the engine default cloud material;
+> `SetCloudiness` currently toggles clear-vs-cloudy. Fine-grained volumetric
+> coverage needs a parameterised cloud material (follow-up).
 
 ---
 
@@ -124,6 +182,7 @@ shown): `UE_INSTANCE=ue-pixelspike`, `UE_ZONE=us-central1-a`,
 | `ue:fix-perms` | `chown` `~/ue` back to you (run once if a pre-fix build left `ue4`-owned files and `ue:sync` errors) |
 | `ue:build` | headless cook + package inside `dev-5.7` (`build/build-in-container.sh`) |
 | `ue:run` / `ue:run:rc` | stream the packaged build (`:rc` also enables Remote Control) in a `tmux` session `stream` |
+| `ue:rc-tunnel` | SSH-forward the VM's RC port → `localhost:30010` so `rc-bridge` can drive it privately (blocks; own terminal) |
 | `ue:stop-app` | kill the stream (tmux session + UE app + signalling) |
 | `ue:logs` | tail signalling log (`/tmp/ss.log`) |
 | `ue:logs:app` | attach the UE app's `tmux` session (Ctrl-b d to detach) |

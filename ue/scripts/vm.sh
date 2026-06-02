@@ -57,6 +57,13 @@ case "$cmd" in
   stop-app)
     ssh_command 'tmux kill-session -t stream 2>/dev/null; pkill -f YellowWorld 2>/dev/null; pkill -f SignallingWebServer 2>/dev/null; pkill -f cirrus 2>/dev/null; echo stopped; true' ;;
 
+  # --- remote control (Spike 1b) -----------------------------------------
+  # Forward the VM's unauthenticated RC web server (30010) to localhost so the
+  # Mac-side rc-bridge can drive it privately. Blocks (run in its own terminal).
+  rc-tunnel)
+    echo "Tunnel localhost:30010 -> VM:30010 (Ctrl-C to stop). Point rc-bridge at http://127.0.0.1:30010"
+    gcloud compute ssh "$INSTANCE" "${GF[@]}" -- -N -L 30010:localhost:30010 ;;
+
   # --- logs / debug -------------------------------------------------------
   logs)      ssh_command 'tail -n 100 /tmp/ss.log' ;;
   logs-app)  gcloud compute ssh "$INSTANCE" "${GF[@]}" --command='tmux attach -t stream' -- -t ;;
@@ -66,5 +73,5 @@ case "$cmd" in
   open)      open "http://$(ip)" ;;
   deploy)    "$0" sync && "$0" build && "$0" run ;;
 
-  *) echo "usage: vm.sh {provision|up|down|destroy|status|ip|ssh|sync|fix-perms|build|run|run-rc|stop-app|logs|logs-app|ports|open|deploy}"; exit 1 ;;
+  *) echo "usage: vm.sh {provision|up|down|destroy|status|ip|ssh|sync|fix-perms|build|run|run-rc|rc-tunnel|stop-app|logs|logs-app|ports|open|deploy}"; exit 1 ;;
 esac

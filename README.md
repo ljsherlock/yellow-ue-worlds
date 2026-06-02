@@ -23,9 +23,11 @@ state is persisted in a temporal knowledge graph so the world has memory.
 | Phase 1 — Inspector pages 01–07 | ✅ Complete 2026-06-01 | All boundaries mocked behind R2 interfaces; 7 live pages; 94 tests green |
 | Phase 2 Track A — Brain | ✅ Complete 2026-06-01 | Python LangGraph brain (`packages/brain`) + `BrainHttpClient`; R4 Zod→JSON-Schema codegen; page 01 mock↔live toggle; 109 tests green (99 TS + 10 py) |
 | **Vision update — LLM-directed ecosystem** | 🧭 Adopted 2026-06-02 | Two-tier (LLM director + deterministic behaviour sim) over a relationship graph. See `## World model`. Reshapes Track B + adds a 2D ecosystem-sim inspector page (08). |
-| Real components (B/C/D) | ⏳ Not started | Phase 2 remaining tracks (B reframed — see `## World model`) |
-| GCP infrastructure | ⏳ Not started | Phase 3 of MVP plan |
-| End-to-end loop | ⏳ Not started | Phase 4 of MVP plan |
+| Phase 2 Track B — World model + ecologist | ✅ Shipped 2026-06-02 | `SceneSpec` + behaviour sim + LLM `/populate` (Gemini-verified). See `## World model` |
+| Phase 2 Track C — RC bridge (real transport) | ✅ Done 2026-06-02 | `HttpRCBridge` + CLI; wire format verified vs UE 5.7 docs |
+| Phase 2 Track D — UE on GPU | 🟢 Spikes 1a + 1b PROVEN 2026-06-02 | Streamed from GCP T4 **and** drove `WorldDirector.SetSkyState` live over Remote Control. See `ue/README.md` |
+| GCP infrastructure | ✅ Core done 2026-06-02 | Provision/driver/build/stream/firewall scripted + npm ops wrapper (`ue/`). L4 perf/cost benchmark deferred |
+| End-to-end loop | ⏳ Partial | Control loop closed (1b). Remaining: brain→bridge wiring + believable scene. See `## Remaining for the savanna vision` |
 
 ---
 
@@ -534,7 +536,7 @@ The goal of the MVP is to prove the full end-to-end loop works:
 - [x] **04** RC Round-Trip (mock RC transport, real wire format) ✅ 2026-06-01
   - New package `@yellow-ue/rc-bridge`: `RCBridge` interface (R2) + `MockRCBridge` + `toRCFunctionCall` mapping (WorldAPICall → RC function call)
   - Produces the exact UE Remote Control wire request (`PUT /remote/object/call`), simulates latency (jitter 80–160ms) and failures; `rc-bridge.*` boundary-wrapped
-  - ⚠️ Wire format modeled after UE Remote Control but **not yet verified against UE 5.7** — verified in Phase 2 Track C against a running engine
+  - ✅ Wire format **verified against the live UE 5.7 Remote Control HTTP reference** (2026-06-02) and proven against a running engine in Spike 1b — `MockRCBridge` and the real `HttpRCBridge` share this contract
   - Page 04: pick a tool call → see the wire request → send → response + latency log; failure-simulation toggle
 - [x] **05** PCG Inspector (mock PCG output) ✅ 2026-06-01
   - New package `@yellow-ue/pcg`: `PCGRunner` interface (R2) + `MockPCGRunner` (seeded deterministic disk scatter) + `spawnTreesToPCGRequest` mapping
@@ -553,8 +555,8 @@ The goal of the MVP is to prove the full end-to-end loop works:
 |---|---|---|---|
 | **A** Brain | Python | LangGraph agent, LLM client adapter, tool router, Postgres checkpointer | ✅ core done 2026-06-01 (checkpointer deferred) |
 | **B** Memory | TS + Python | **Reframed 2026-06-02.** ✅ Authoritative `WorldModel` relationship graph + deterministic behaviour sim (`@yellow-ue/world-model`); ✅ **`SceneSpec` director contract locked & generated** (R4); ✅ **LLM ecologist** (`Ecologist` boundary + brain `/populate`, Gemini structured output, Fake fallback) so a vague prompt infers the whole scene; ✅ **page 08** with mock↔live toggle; ✅ **live Gemini path verified** end-to-end (`gemini-2.5-flash`). Remaining: referential-integrity check on LLM scenes (warn/repair when a relationship names a missing species); Graphiti → director's *semantic* memory, later. See `## World model`. | 🟢 ecologist shipped & Gemini-verified |
-| **C** Bridge | TypeScript | `rc-bridge` HTTP+WS client implementing `WorldAPIClient` interface | ⏳ |
-| **D** UE | C++/Blueprint | Packaged UE 5.7 build with: Pixel Streaming 2, Remote Control, `WorldDirector.SetSkyState`, (PCG later) | 🟢 **Spike 1a PROVEN 2026-06-02** — headless cook+package in `dev-5.7` container → streamed to browser from a GCP **T4** (L4 capacity-exhausted; T4 de-risks the pipeline, L4 perf/cost benchmark deferred). See `ue/README.md`. Spike 1b (drive `WorldDirector` over Remote Control) next. |
+| **C** Bridge | TypeScript | `rc-bridge` HTTP client implementing `RCBridge` | 🟢 **Done 2026-06-02** — `HttpRCBridge` (real `fetch` transport, `PUT /remote/object/call` + `/property`) + a `tsx` CLI (`ping`/`sky`/`call`). Wire format **verified against the live UE 5.7 Remote Control HTTP reference**. WS transport not needed yet. |
+| **D** UE | C++/Blueprint | Packaged UE 5.7 build with: Pixel Streaming 2, Remote Control, `WorldDirector.SetSkyState`, (PCG later) | 🟢 **Spikes 1a + 1b PROVEN 2026-06-02** — (1a) headless cook+package in `dev-5.7` container → streamed to browser from a GCP **T4** (L4 capacity-exhausted; L4 perf/cost deferred); (1b) drove `WorldDirector.SetSkyState` live over Remote Control via the rc-bridge CLI through an SSH tunnel — sun rotates in-stream. See `ue/README.md`. |
 
 Each track replaces a mock from Phase 1 with the real thing. **Inspectors continue to work throughout — they're the integration test.**
 
@@ -601,6 +603,58 @@ are wrong shape for persistent UE streaming sessions.
 
 **MVP success criterion**: a non-engineer can type a prompt and see the world
 respond, with the full LLM→UE chain visible in the inspector.
+
+> **Mechanism proven (Spike 1b, 2026-06-02):** prompt-free, the chain
+> *HTTP → `WorldDirector.SetSkyState` → world mutates → next streamed frame*
+> works end-to-end. What's left for Phase 4 is wiring the **brain** to the
+> bridge (so a *prompt* drives it) and pointing the **production web app** at
+> the stream. See below.
+
+---
+
+## Remaining for the savanna vision
+
+Decision (2026-06-02): **build a believable scene first, add characters/animals
+later.** This aligns with what UE 5.7 actually provides (below).
+
+### What UE 5.7 can and can't generate (verified 2026-06-02, UE 5.7 GA'd 2025-11-12)
+
+| Need | UE 5.7 native capability | Verdict |
+|---|---|---|
+| Terrain, biome scatter, rocks/clutter | **PCG** (Procedural Content Generation) — production-ready; runtime Blueprint-callable, GPU-accelerated | ✅ engine-native |
+| Trees / plants (authoring the mesh itself) | **Procedural Vegetation Editor** (Experimental) — node-graph custom plants, export static/skeletal, Nanite Foliage + procedural wind | ✅ engine-native (experimental) |
+| Human characters | **MetaHuman Creator** — in-editor, now on **Linux**/macOS, Python/Blueprint batch API | ✅ humans only |
+| Lighting / materials fidelity | MegaLights (Beta), Substrate (production-ready), Lumen/Nanite | ✅ |
+| **Animals (lion, zebra, birds), vehicles (jeep)** | **none** — no creature generator, no native text-to-3D (the new "AI Assistant" is a coding helper, not a mesh generator) | ❌ must come from a pre-rigged catalog |
+
+So: the **environment** is fully covered by the engine; **animals/vehicles are
+not** and require imported, rigged, animated assets. Hence scene-first.
+
+### Ordered remaining work
+
+1. **[next] Editor on the GPU VM (de-risk asset/PCG authoring)** — headless
+   cooking gave us primitives; PCG graphs, PVE vegetation, and asset import need
+   the **UE Editor** running on the VM over a remote desktop (VNC/RDP) or an
+   automated import pipeline. This is the gate to everything visual.
+2. **Believable savanna scene (no animals yet)** — landscape terrain, PCG
+   ground scatter, PVE acacia/grass with Nanite Foliage + wind, Substrate
+   ground materials, the existing dynamic sky, MegaLights. Target: a scene that
+   *reads* as a savanna at golden hour.
+3. **`BuildWorld(SceneSpec)` verbs in UE** — extend `WorldDirector` beyond
+   `SetSkyState`: spawn-by-`SceneSpec` (vegetation via PCG, features like the
+   watering hole), `AdvanceTime`. Reconcile the `world-api`/`world-model`
+   contracts with the real C++ signatures (the preset-vs-floats mismatch noted
+   in `## World model`).
+4. **Brain → bridge wiring** — connect the Python ecologist `/populate` →
+   `SceneSpec` → `rc-bridge` → `BuildWorld`, so a vague prompt populates the 3D
+   scene (both halves already exist and are tested in isolation).
+5. **Authoritative world state** — persist `WorldMemoryStore` so the scene has
+   memory across prompts and world-time.
+6. **Characters & behaviour (deferred)** — import a pre-rigged animal catalog +
+   a jeep; port the page-08 behaviour sim (stalk/flee/herd/drink/rest) to UE
+   behaviour trees + navmesh; Chaos Vehicle for the jeep.
+7. **Productionize** — point the production web app at the stream; domain +
+   HTTPS; L4 perf/cost benchmark when capacity returns.
 
 ---
 
