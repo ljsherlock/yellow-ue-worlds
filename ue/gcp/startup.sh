@@ -9,7 +9,8 @@ echo "[startup] $(date -u) begin"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y build-essential ca-certificates curl gnupg python3
+# tmux + rsync are used by the Mac-side ops scripts (npm run ue:run / ue:sync).
+apt-get install -y build-essential ca-certificates curl gnupg python3 tmux rsync git
 
 # --- NVIDIA driver via GCP's official cuda_installer (L4/G2 needs R535+) ------
 # This is GCP's recommended path for Compute Engine and builds modules against

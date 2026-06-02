@@ -39,7 +39,7 @@ Hard-won operational notes (folded into the scripts):
 - GPU driver via GCP's `cuda_installer.pyz`, not `ubuntu-drivers` (matches `-gcp` kernel; reboots once).
 - Startup `gpg --dearmor` needs `--no-tty`; install Docker via `get.docker.com`.
 - Target files must use `BuildSettingsVersion.V6` (match prebuilt engine); `ProjectPackagingSettings.Build` is an enum, not a bool.
-- Bind-mounted project must be owned by `ue4` (uid 1000) to build; chown back to your user to *run*.
+- Bind-mounted project must be owned by `ue4` (uid 1000) to build — `build-in-container.sh` now chowns to `ue4` for the build and **restores it to your user on exit** (trap), so no manual chown to run/sync/edit afterward.
 - PS2 launch arg is `-PixelStreamingSignallingURL`; the 5.7 Cirrus server rejects `--publicIp` (STUN handles the public candidate).
 - Level lights must be **Movable** (no lightmap bake headless; also required for runtime sun control).
 
@@ -104,24 +104,53 @@ echo "<YOUR_PAT>" | docker login ghcr.io -u <YOUR_GITHUB_USERNAME> --password-st
 docker pull ghcr.io/epicgames/unreal-engine:dev-5.7   # confirm exact tag first
 ```
 
-## 3. Build + stream — ⏳ scripts coming next
+## 3. Build + stream — npm ops (`ue/package.json`)
 
-The next artifacts (being written) are:
+Day-to-day operation is wrapped in npm scripts so you never type raw
+`gcloud`/`ssh`/`rsync`. **Run them from this `ue/` dir** (`cd ue && npm run …`).
+They call `scripts/vm.sh`, which targets the VM via these env vars (defaults
+shown): `UE_INSTANCE=ue-pixelspike`, `UE_ZONE=us-central1-a`,
+`UE_PROJECT=task-assistant-project`. Override inline, e.g.
+`UE_ZONE=us-east4-a npm run ue:up`.
 
-- `ue/project/PixelSpike/` — a minimal UE 5.7 C++ project: a `WorldDirector`
-  actor exposing `SetSkyState` to Remote Control, with Pixel Streaming + Remote
-  Control plugins enabled in `Config/`.
-- `ue/build/build-in-container.sh` — package a Linux build inside the `dev-5.7`
-  image (headless cook; no editor GUI).
-- `ue/run/run-stream.sh` — launch the packaged app (`-RenderOffScreen
-  -PixelStreamingIP=localhost -PixelStreamingPort=8888`) + the signalling/web
-  server, so the browser can connect at `http://<VM_EXTERNAL_IP>`.
+| Command | What it does |
+|---|---|
+| `ue:provision` | create the GPU VM + firewall (`gcp/provision-l4.sh`; honours `GPU=t4`, `SPOT`, `DISK_GB`) |
+| `ue:up` / `ue:down` | start / stop the VM (stop = no GPU bill, disk persists) |
+| `ue:destroy` | delete the VM (`gcp/teardown.sh`) |
+| `ue:status` / `ue:ip` | instance state + public IP |
+| `ue:ssh` | interactive shell on the VM (extra args passed through) |
+| `ue:sync` | `rsync` this `ue/` tree → `~/ue` on the VM (skips `Packaged/Intermediate/Saved/Binaries/Build/.git`) |
+| `ue:fix-perms` | `chown` `~/ue` back to you (run once if a pre-fix build left `ue4`-owned files and `ue:sync` errors) |
+| `ue:build` | headless cook + package inside `dev-5.7` (`build/build-in-container.sh`) |
+| `ue:run` / `ue:run:rc` | stream the packaged build (`:rc` also enables Remote Control) in a `tmux` session `stream` |
+| `ue:stop-app` | kill the stream (tmux session + UE app + signalling) |
+| `ue:logs` | tail signalling log (`/tmp/ss.log`) |
+| `ue:logs:app` | attach the UE app's `tmux` session (Ctrl-b d to detach) |
+| `ue:ports` | what's listening on 80 / 8888 / 30010 |
+| `ue:open` | open `http://<VM_IP>` in your browser (macOS) |
+| `ue:deploy` | `sync` → `build` → `run` in one go |
+
+**Typical loop after a code change:**
+
+```bash
+cd ue
+npm run ue:up        # if stopped
+npm run ue:deploy    # sync + build + run  (or run the three steps individually)
+npm run ue:open      # watch it in the browser
+# ... iterate ...
+npm run ue:down      # stop the GPU bill when done
+```
+
+First sync onto a VM that has older `ue4`-owned files: run `npm run ue:fix-perms`
+once before `npm run ue:sync`. After that the build self-restores ownership, so
+you won't need it again.
 
 > The one honest wrinkle in a fully headless flow is the **startup map** — a
-> `.umap` is a binary asset normally authored in the editor. The skeleton will
-> use an engine template/empty map (or a tiny Python-generated level run in the
-> headless editor) so Spike 1a needs **no** GUI. PCG and richer content come
-> later, when you can run the editor in the container over a remote desktop.
+> `.umap` is a binary asset normally authored in the editor. We sidestep it with
+> a tiny Python-generated level (`project/YellowWorld/Scripts/make_map.py`) run
+> in the headless editor, so Spike 1a needs **no** GUI. PCG and richer content
+> come later, when you can run the editor in the container over a remote desktop.
 
 ## Tear down (do this when done — L4 bills hourly)
 
