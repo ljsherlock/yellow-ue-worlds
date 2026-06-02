@@ -7,11 +7,14 @@ tests need no API key and the brain has parity with the Phase 1 mock.
 
 from __future__ import annotations
 
+import copy
 import math
 import os
 import re
 from dataclasses import dataclass
 from typing import Optional, Protocol, runtime_checkable
+
+from . import contracts
 
 
 @dataclass
@@ -24,11 +27,24 @@ class ProviderOutput:
     finish_reason: str
 
 
+@dataclass
+class ScenePlan:
+    """The director's output: a populated scene the LLM reasoned into existence."""
+
+    scene: dict
+    reasoning: str
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 @runtime_checkable
 class LLMProvider(Protocol):
     name: str
 
     def generate(self, prompt: str, world_context: Optional[str]) -> ProviderOutput: ...
+
+    def populate(self, prompt: str) -> ScenePlan: ...
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -143,6 +159,87 @@ class FakeProvider:
             finish_reason="tool_calls" if tool_calls else "stop",
         )
 
+    def populate(self, prompt: str) -> ScenePlan:
+        p = prompt.lower()
+        if re.search(r"savann?ah?|watering|jeep|safari|serengeti", p):
+            scene = copy.deepcopy(_SAVANNA)
+            biome = "savanna"
+        elif re.search(r"forest|woods?|temperate|deer|wolf|wolves", p):
+            scene = copy.deepcopy(_FOREST)
+            biome = "temperate forest"
+        else:
+            scene = copy.deepcopy(_MEADOW)
+            biome = "meadow"
+        if re.search(r"storm|thunder", p):
+            scene["weather"] = {"preset": "storm", "temperature": 0.5, "timeOfDay": 15}
+        elif re.search(r"night|midnight", p):
+            scene["weather"] = {"preset": "night", "temperature": 0.3, "timeOfDay": 2}
+        names = ", ".join(s["species"] for s in scene["species"])
+        return ScenePlan(
+            scene=scene,
+            reasoning=f"Recognised a {biome}; populated it with {names}.",
+            model="fake-ecologist-v1",
+            input_tokens=math.ceil(len(prompt) / 4),
+            output_tokens=40,
+        )
+
+
+# Biome fixtures for the keyless Fake path — full enough to look good on the map.
+_SAVANNA: dict = {
+    "bounds": 100,
+    "weather": {"preset": "clear", "temperature": 0.8, "timeOfDay": 12},
+    "species": [
+        {"species": "watering_hole", "kind": "feature", "diet": "none", "count": 1, "radius": 7, "color": "#38bdf8", "maxSpeed": 0},
+        {"species": "acacia", "kind": "plant", "diet": "none", "count": 14, "radius": 1.5, "color": "#65a30d", "maxSpeed": 0},
+        {"species": "buffalo", "kind": "animal", "diet": "prey", "count": 12, "radius": 1.6, "color": "#a16207", "maxSpeed": 7},
+        {"species": "zebra", "kind": "animal", "diet": "prey", "count": 10, "radius": 1.3, "color": "#e5e7eb", "maxSpeed": 8},
+        {"species": "lion", "kind": "animal", "diet": "predator", "count": 3, "radius": 1.7, "color": "#f59e0b", "maxSpeed": 9},
+        {"species": "jeep", "kind": "vehicle", "diet": "none", "count": 1, "radius": 2, "color": "#dc2626", "maxSpeed": 10},
+    ],
+    "relationships": [
+        {"subject": "lion", "predicate": "stalks", "object": "buffalo"},
+        {"subject": "lion", "predicate": "stalks", "object": "zebra"},
+        {"subject": "buffalo", "predicate": "herds-with", "object": "buffalo"},
+        {"subject": "zebra", "predicate": "herds-with", "object": "zebra"},
+        {"subject": "buffalo", "predicate": "drinks-at", "object": "watering_hole"},
+        {"subject": "zebra", "predicate": "drinks-at", "object": "watering_hole"},
+        {"subject": "lion", "predicate": "drinks-at", "object": "watering_hole"},
+        {"subject": "jeep", "predicate": "disturbs", "object": "buffalo"},
+        {"subject": "jeep", "predicate": "disturbs", "object": "zebra"},
+    ],
+}
+
+_FOREST: dict = {
+    "bounds": 100,
+    "weather": {"preset": "cloudy", "temperature": 0.45, "timeOfDay": 9},
+    "species": [
+        {"species": "river", "kind": "feature", "diet": "none", "count": 1, "radius": 6, "color": "#38bdf8", "maxSpeed": 0},
+        {"species": "oak", "kind": "plant", "diet": "none", "count": 20, "radius": 1.7, "color": "#15803d", "maxSpeed": 0},
+        {"species": "deer", "kind": "animal", "diet": "prey", "count": 12, "radius": 1.3, "color": "#d6a87a", "maxSpeed": 8},
+        {"species": "wolf", "kind": "animal", "diet": "predator", "count": 4, "radius": 1.5, "color": "#9ca3af", "maxSpeed": 9},
+    ],
+    "relationships": [
+        {"subject": "wolf", "predicate": "stalks", "object": "deer"},
+        {"subject": "deer", "predicate": "herds-with", "object": "deer"},
+        {"subject": "deer", "predicate": "drinks-at", "object": "river"},
+        {"subject": "wolf", "predicate": "drinks-at", "object": "river"},
+    ],
+}
+
+_MEADOW: dict = {
+    "bounds": 100,
+    "weather": {"preset": "clear", "temperature": 0.4, "timeOfDay": 10},
+    "species": [
+        {"species": "pond", "kind": "feature", "diet": "none", "count": 1, "radius": 6, "color": "#38bdf8", "maxSpeed": 0},
+        {"species": "wildflower", "kind": "plant", "diet": "none", "count": 22, "radius": 1.2, "color": "#a3e635", "maxSpeed": 0},
+        {"species": "rabbit", "kind": "animal", "diet": "prey", "count": 16, "radius": 1.0, "color": "#e5e7eb", "maxSpeed": 9},
+    ],
+    "relationships": [
+        {"subject": "rabbit", "predicate": "herds-with", "object": "rabbit"},
+        {"subject": "rabbit", "predicate": "drinks-at", "object": "pond"},
+    ],
+}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GeminiProvider — real provider (lazy import; needs GOOGLE_API_KEY)
@@ -152,7 +249,7 @@ class FakeProvider:
 class GeminiProvider:
     name = "gemini"
 
-    def __init__(self, model: str = "gemini-2.0-flash") -> None:
+    def __init__(self, model: str = "gemini-2.5-flash") -> None:
         self.model = model
 
     def generate(self, prompt: str, world_context: Optional[str]) -> ProviderOutput:
@@ -179,6 +276,81 @@ class GeminiProvider:
             output_tokens=int(usage.get("output_tokens", 0)),
             finish_reason="tool_calls" if tool_calls else "stop",
         )
+
+    def populate(self, prompt: str) -> ScenePlan:
+        from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        # Gemini's structured-output schema is a subset of JSON Schema, so we
+        # strip keywords it rejects (defaults, additionalProperties, numeric
+        # bounds) from the canonical artifact — still schema-driven (R4).
+        schema = _sanitize_for_gemini(contracts.SCENE_SCHEMA)
+        llm = ChatGoogleGenerativeAI(model=self.model, temperature=0.4)
+        structured = llm.with_structured_output(schema)
+        scene = structured.invoke(
+            [SystemMessage(content=_ECOLOGIST_PROMPT), HumanMessage(content=prompt)]
+        )
+        scene_dict = dict(scene) if not isinstance(scene, dict) else scene
+        names = ", ".join(s.get("species", "?") for s in scene_dict.get("species", []))
+        return ScenePlan(
+            scene=scene_dict,
+            reasoning=f"Gemini populated the scene with {names}." if names else "Gemini returned a scene.",
+            model=self.model,
+        )
+
+
+def _sanitize_for_gemini(schema: dict) -> dict:
+    """Recursively drop JSON-Schema keywords Gemini's structured output rejects."""
+    drop = {
+        "$schema",
+        "default",
+        "additionalProperties",
+        "minLength",
+        "maxLength",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+    }
+    if not isinstance(schema, dict):
+        return schema
+    out: dict = {}
+    for key, value in schema.items():
+        if key in drop:
+            continue
+        if key == "properties" and isinstance(value, dict):
+            out[key] = {k: _sanitize_for_gemini(v) for k, v in value.items()}
+        elif key == "items":
+            out[key] = _sanitize_for_gemini(value)
+        else:
+            out[key] = value
+    return out
+
+
+_ECOLOGIST_PROMPT = (
+    "You are an ecologist and scene director for a real-time 3D world. Given a "
+    "short, possibly vague description, infer what naturally belongs there and "
+    "return a structured scene.\n\n"
+    "For `species`, list the flora, fauna, water features and any vehicles that "
+    "plausibly exist. Set `kind` to animal | plant | vehicle | feature (a "
+    "watering hole, river or pond is a feature). Set `diet` to predator | prey | "
+    "none. Choose realistic counts (few predators, prey in herds of 8-14, plants "
+    "scattered), a `maxSpeed` in world units (predators slightly faster than "
+    "their prey; plants and features 0), a small body `radius`, and a hex "
+    "`color` that reads well on a dark map.\n\n"
+    "For `relationships`, connect species using ONLY these predicates: `stalks` "
+    "(predator hunts prey), `flees-from`, `herds-with` (gregarious animals, "
+    "usually a species with itself), `drinks-at` (an animal -> a water feature), "
+    "`disturbs` (a vehicle -> the animals it frightens). Always link each "
+    "predator to its prey with `stalks`, each herd animal to itself with "
+    "`herds-with`, and each drinking animal to the water feature with "
+    "`drinks-at`.\n\n"
+    "For `weather`, pick a preset (clear|cloudy|storm|sunset|night), a "
+    "temperature 0..1 and a timeOfDay 0..24 that match the description (a hot "
+    "midday savanna is ~0.8 temperature at 12:00).\n\n"
+    "Keep the world to about 6 species. Only include a vehicle if the prompt "
+    "mentions one. Be ecologically sensible."
+)
 
 
 def _normalize_tool_call(tc: dict) -> dict:
@@ -248,5 +420,6 @@ def make_provider() -> LLMProvider:
     provider = os.environ.get("BRAIN_PROVIDER", "").lower()
     has_key = bool(os.environ.get("GOOGLE_API_KEY"))
     if provider == "gemini" or (provider == "" and has_key):
-        return GeminiProvider()
+        model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        return GeminiProvider(model=model)
     return FakeProvider()

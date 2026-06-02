@@ -22,7 +22,8 @@ state is persisted in a temporal knowledge graph so the world has memory.
 | Phase 0 — Foundation | ✅ Complete 2026-06-01 | Workspace + rules + `world-api` + `tracing` + inspector skeleton + page 07 keystone, 52 tests green |
 | Phase 1 — Inspector pages 01–07 | ✅ Complete 2026-06-01 | All boundaries mocked behind R2 interfaces; 7 live pages; 94 tests green |
 | Phase 2 Track A — Brain | ✅ Complete 2026-06-01 | Python LangGraph brain (`packages/brain`) + `BrainHttpClient`; R4 Zod→JSON-Schema codegen; page 01 mock↔live toggle; 109 tests green (99 TS + 10 py) |
-| Real components (B/C/D) | ⏳ Not started | Phase 2 remaining tracks |
+| **Vision update — LLM-directed ecosystem** | 🧭 Adopted 2026-06-02 | Two-tier (LLM director + deterministic behaviour sim) over a relationship graph. See `## World model`. Reshapes Track B + adds a 2D ecosystem-sim inspector page (08). |
+| Real components (B/C/D) | ⏳ Not started | Phase 2 remaining tracks (B reframed — see `## World model`) |
 | GCP infrastructure | ⏳ Not started | Phase 3 of MVP plan |
 | End-to-end loop | ⏳ Not started | Phase 4 of MVP plan |
 
@@ -42,6 +43,131 @@ state is persisted in a temporal knowledge graph so the world has memory.
   the world is in continuous motion, not request/response.
 - **Browser-delivered** — zero install, runs on any modern browser including
   mobile, no client GPU requirements.
+- **A living ecosystem, not a diorama** — the LLM populates a scene with the
+  entities that naturally belong (flora, fauna, weather) **and the
+  relationships between them** (predator/prey, herd, territory). Those
+  relationships, modulated by weather and internal state, drive ongoing
+  behaviour: prey flee an approaching predator, a sated lion sleeps, midday
+  heat pulls the herd to the watering hole.
+
+---
+
+## World model: entities, relationships & behaviour (vision update 2026-06-02)
+
+The core loop is an **LLM-directed ecosystem**. Example: *"a savanna with a
+watering hole and a jeep driving around"* → the brain reasons about what
+belongs (acacia, grass, buffalo, zebra, a lion or two, vultures, heat) **and
+how they relate** (lion `stalks` buffalo, buffalo `herd-with` buffalo, prey
+`flee-from` lion, everything `drinks-at` the watering hole), then those
+relationships play out over time.
+
+### Two tiers — keep the LLM out of the frame loop
+
+| Tier | Cadence | Responsibility | Where it runs |
+|---|---|---|---|
+| **LLM director / "ecologist"** | occasional (scene creation, story beats, user prompts) | *what exists*, *the relationships*, *dispositions* (hungry/sated, alert/calm), weather & behaviour modifiers | brain service (LangGraph) |
+| **Behaviour simulation** | every tick (real-time) | perception, threat evaluation, flee/stalk/herd/rest/drink, steering — **emergent** behaviour parameterised by the graph + weather | UE (behaviour trees / utility AI); prototyped in a 2D inspector first |
+
+**Why the split is non-negotiable:** an LLM cannot drive per-frame movement —
+latency, cost, and nondeterminism make it impossible. The LLM sets the stage
+and the rules; the deterministic sim plays them out. This is the standard
+directed game-AI separation.
+
+### The relationship graph IS the "memory graph"
+
+Entities = nodes, relationships = typed edges (`stalks`, `flees-from`,
+`herds-with`, `drinks-at`, `territory-of`), dispositions = node/edge state.
+This authoritative **world-model graph** — structured, deterministic, on our
+own world-time axis — is what `WorldMemoryStore` becomes. It is **not**
+Graphiti: Graphiti builds graphs by LLM-extracting *unstructured* episodes,
+whereas our world state is authoritative and known (we *command* that the lion
+stalks the buffalo; we don't infer it from text).
+
+**Graphiti's real home** is one tier up — the director's **semantic / episodic
+memory** ("this user favours predators", "last session a drought thinned the
+herd"): fuzzy context the LLM reads to make better creative choices. Deferred
+until an LLM/embedder key is available (verified 2026-06-02: Graphiti requires
+a graph backend — Kuzu runs embedded, no server — plus an LLM + embedder for
+ingestion).
+
+### Director contract — `SceneSpec` (✅ locked 2026-06-02)
+
+We chose a **scene-level** director contract over incremental mutation tools.
+Rather than the LLM emitting a stream of `SpawnEntities` / `SetRelationship`
+calls, the **ecologist emits one whole `SceneSpec`** — the species that belong,
+their typed relationships, dispositions and weather — which the deterministic
+sim then runs. This is far more reliable for an LLM (one structured object,
+validated once) and keeps the LLM doing *semantics*, not numeric layout
+(`buildWorld` places everything deterministically).
+
+`SceneSpec` is now a **canonical, generated contract** (R4): the Zod schema in
+`@yellow-ue/world-model` is emitted to `schemas/scene-spec.schema.json` and
+vendored to the Python brain, which validates its own output against it.
+
+- `species[]` — `species`, `kind` (animal/plant/vehicle/feature), `diet`
+  (predator/prey/none), `count`, `maxSpeed`, `radius`, `color`.
+- `relationships[]` — typed edges: `stalks` / `flees-from` / `herds-with` /
+  `drinks-at` / `disturbs`.
+- `weather` — preset, temperature (0–1), timeOfDay (0–24).
+
+**Later (not yet needed):** incremental in-session mutation tools
+(`SetRelationship`, `SetDisposition`, `SetBehaviourModifier`) for the LLM to
+*adjust* a live world rather than re-populate it. Deferred until the director
+needs mid-session edits.
+
+### Next concrete step (inspector-first) — ✅ SHIPPED 2026-06-02
+
+The biggest *new* risk is the **believability of emergent behaviour** — and it
+has nothing to do with UE or GPUs. So we built a **2D top-down ecosystem-sim
+inspector page** (page **08**, `@yellow-ue/world-model`): entities as dots, a
+watering hole, a live weather state; a deterministic per-tick sim runs the
+behaviours; you watch lions stalk, prey scatter, heat pull the herd to water,
+and a sated lion rest. What landed:
+
+- **`@yellow-ue/world-model` package** — `Entity` / `Relationship` (typed edges:
+  `stalks`/`flees-from`/`herds-with`/`drinks-at`/`disturbs`) / `Weather` /
+  `SceneSpec` (Zod-validated), `InMemoryWorldModel` store, and a pure,
+  **seedable** `stepWorld(state, dt, rng)` behaviour sim.
+- **Two-tier in practice** — director mutations (`loadScene`, `setWeather`) are
+  `boundary`-traced (R3); the 60 Hz `step` is intentionally untraced.
+- **6 behaviour tests** lock the rules: prey flees, a sated predator rests,
+  thirst pulls grazers to water under heat, same-seed determinism, in-bounds,
+  R3 tracing.
+
+#### Follow-up — the LLM actually infers the ecosystem (✅ SHIPPED 2026-06-02)
+
+The first cut populated page 08 from a hand-authored scene via keyword lookup.
+Now the **LLM genuinely reasons the scene from a vague prompt**:
+
+- **`Ecologist` boundary** (`@yellow-ue/world-model`, R2): `populate(prompt) →
+  SceneSpec`. `MockEcologist` is the keyless stand-in; `BrainHttpClient`
+  (`@yellow-ue/llm-brain/http`) is the live implementation of the *same*
+  interface.
+- **Python brain `/populate`** — an `Ecologist` over the provider abstraction.
+  `GeminiProvider.populate` uses **Gemini structured output** bound to a
+  sanitized scene-spec schema (the model decides species, counts,
+  relationships, weather); `FakeProvider.populate` gives keyless biome tables
+  (savanna / forest / meadow) for offline/CI.
+- **Schema-driven defaults + validation** — the brain fills defaults straight
+  from the generated artifact and validates against it before returning (R4).
+- **Page 08 mock ↔ live (Gemini) toggle** — shows the director's reasoning,
+  the active model, and surfaces brain errors. Cross-process spans fold into
+  the Pipeline Trace Viewer (R3).
+- **Tests:** Python 14 passed (incl. `/populate` + Fake parity); TS llm-brain
+  23 (incl. `populate`). Live `/populate` smoke verified end-to-end with the
+  Fake provider.
+
+**Live Gemini path — ✅ VERIFIED 2026-06-02 (`gemini-2.5-flash`).** With a
+`GOOGLE_API_KEY` in `packages/brain/.env` (auto-loaded), a real `/populate` for
+*"a misty mangrove swamp at dawn with crocodiles and wading birds"* returned a
+schema-valid scene: crocodile (predator) `stalks` wading bird (prey), birds
+`herd-with` themselves, both `drink-at` swamp water, mangroves scattered, dawn
+weather. This confirms the model name, that Gemini's structured output survives
+the schema sanitizer, and that the relationships come back in the exact shape
+the sim consumes. Without a key the brain auto-falls back to the Fake ecologist.
+
+Whatever rules survive become the spec UE's behaviour trees implement in
+Phase 2 Track D.
 
 ---
 
@@ -78,6 +204,14 @@ All findings checked against live primary sources, not search summaries.
      timestamps on every fact. Perfect fit for evolving entities (trees,
      biomes, weather, creatures).
    - Mem0 added later for per-user personalization. Skipped for prototype.
+
+   > **Correction (2026-06-02, verified against the live Graphiti README):**
+   > Graphiti builds its graph by **LLM-extracting unstructured episodes** and
+   > requires an LLM + embedder (Kuzu can serve as an embedded, server-less
+   > backend). That is the wrong tool for *authoritative* world state, which we
+   > *command* rather than infer. The authoritative world state is reframed as a
+   > structured **relationship graph** (`WorldMemoryStore`); Graphiti is moved up
+   > a tier to the director's **semantic memory**. See `## World model`.
 
 2. **UE API control scope** — Larger than expected.
    - **Remote Control API** (HTTP :30010 + WebSocket :30020) works in
@@ -418,9 +552,9 @@ The goal of the MVP is to prove the full end-to-end loop works:
 | Track | Owner-of-attention | Tasks | Status |
 |---|---|---|---|
 | **A** Brain | Python | LangGraph agent, LLM client adapter, tool router, Postgres checkpointer | ✅ core done 2026-06-01 (checkpointer deferred) |
-| **B** Memory | Python | Graphiti integration, schema for world entities, time-travel queries | ⏳ |
+| **B** Memory | TS + Python | **Reframed 2026-06-02.** ✅ Authoritative `WorldModel` relationship graph + deterministic behaviour sim (`@yellow-ue/world-model`); ✅ **`SceneSpec` director contract locked & generated** (R4); ✅ **LLM ecologist** (`Ecologist` boundary + brain `/populate`, Gemini structured output, Fake fallback) so a vague prompt infers the whole scene; ✅ **page 08** with mock↔live toggle; ✅ **live Gemini path verified** end-to-end (`gemini-2.5-flash`). Remaining: referential-integrity check on LLM scenes (warn/repair when a relationship names a missing species); Graphiti → director's *semantic* memory, later. See `## World model`. | 🟢 ecologist shipped & Gemini-verified |
 | **C** Bridge | TypeScript | `rc-bridge` HTTP+WS client implementing `WorldAPIClient` interface | ⏳ |
-| **D** UE | C++/Blueprint | Packaged UE 5.7 build with: Pixel Streaming 2, Remote Control, one world API function (`SetSkyColor`), PCG graph triggered by Remote Control | ⏳ |
+| **D** UE | C++/Blueprint | Packaged UE 5.7 build with: Pixel Streaming 2, Remote Control, `WorldDirector.SetSkyState`, (PCG later) | 🟢 **Spike 1a PROVEN 2026-06-02** — headless cook+package in `dev-5.7` container → streamed to browser from a GCP **T4** (L4 capacity-exhausted; T4 de-risks the pipeline, L4 perf/cost benchmark deferred). See `ue/README.md`. Spike 1b (drive `WorldDirector` over Remote Control) next. |
 
 Each track replaces a mock from Phase 1 with the real thing. **Inspectors continue to work throughout — they're the integration test.**
 
@@ -431,7 +565,7 @@ Each track replaces a mock from Phase 1 with the real thing. **Inspectors contin
 - **Cross-process tracing (R3)**: a Python `@boundary` shim emits BoundaryEvents byte-compatible with the TS shape; the service returns its spans, and `BrainHttpClient` re-parents them (`brain:*`) under `llm-brain.complete` — so page 07 shows TS → HTTP → Python agent → provider in one tree.
 - **`BrainHttpClient implements LLMClient`** (`@yellow-ue/llm-brain/http`): page 01 gained a **mock ↔ live brain** toggle; flipping to "live brain" POSTs to `http://localhost:8000` with zero other changes (R2 proven end-to-end).
 - **Verified**: 99 TS tests + 10 Python tests green; inspector builds + typechecks clean; live service smoke-tested (`uv run python -m brain` → real `/complete` round-trip).
-- **Deferred**: real Gemini call (needs key), LangGraph Postgres checkpointer (durable multi-turn), and wiring the brain to read world state from Track B's memory store.
+- **Deferred**: LangGraph Postgres checkpointer (durable multi-turn) and wiring the brain to read world state from Track B's memory store. (Real Gemini call ✅ verified 2026-06-02 with `gemini-2.5-flash`.)
 
 Run the brain: `cd packages/brain && uv sync && uv run python -m brain` (FakeProvider by default; no key needed).
 
@@ -447,12 +581,13 @@ in place. Pixel Streaming uses Compute Engine GPU (G2 series), not Cloud
 Run GPU, because Cloud Run's 60–120s cold starts and per-request lifecycle
 are wrong shape for persistent UE streaming sessions.
 
-- [ ] GCE G2 (NVIDIA L4) instance provisioning script in `us-central1`
-- [ ] NVIDIA driver + Vulkan setup
-- [ ] UE build deployment to instance
-- [ ] Signalling server + Pixel Streaming frontend
-- [ ] Firewall rules for WebRTC + Remote Control
+- [x] GCE instance provisioning script (`ue/gcp/provision-l4.sh`, `GPU=l4|t4`, spot/on-demand, firewall) — proven on T4 (L4 capacity-blocked)
+- [x] NVIDIA driver setup (GCP `cuda_installer.pyz` via `ue/gcp/startup.sh`) — Vulkan loader (`libvulkan1`) TBD-verify on next run
+- [x] UE build deployment to instance (headless `dev-5.7` container build, `ue/build/build-in-container.sh`)
+- [x] Signalling server + Pixel Streaming frontend (`ue/run/run-stream.sh` → PixelStreamingInfrastructure UE5.7 Cirrus)
+- [x] Firewall rules for WebRTC (`provision-l4.sh`: 80/443/3478/5349/UDP 49152-65535) — Remote Control ports for Spike 1b
 - [ ] Domain + HTTPS for the web client
+- [ ] **L4 perf/cost benchmark** (deferred — ran Spike 1a on T4 due to L4 stockout)
 
 ### Phase 4 — End-to-end loop
 

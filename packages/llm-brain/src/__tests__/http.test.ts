@@ -59,6 +59,21 @@ describe("BrainHttpClient", () => {
     await expect(client.complete({ prompt: "x" })).rejects.toThrow();
   });
 
+  it("populate() posts the prompt and returns the brain's scene", async () => {
+    const scene = {
+      bounds: 100,
+      weather: { preset: "clear", temperature: 0.8, timeOfDay: 12 },
+      species: [{ species: "lion", kind: "animal", diet: "predator", count: 3, maxSpeed: 9, radius: 1.7, color: "#f59e0b" }],
+      relationships: [{ subject: "lion", predicate: "stalks", object: "zebra" }],
+    };
+    const client = new BrainHttpClient({
+      fetchImpl: fakeFetch(200, { result: { scene, reasoning: "savanna", model: "fake-ecologist-v1" }, spans: [] }),
+    });
+    const out = await client.populate("a savanna");
+    expect(out.model).toBe("fake-ecologist-v1");
+    expect(out.scene.species[0]?.species).toBe("lion");
+  });
+
   it("merges brain spans into the current trace, re-parented", async () => {
     const sink = new InMemorySink();
     setSink(sink);

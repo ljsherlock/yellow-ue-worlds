@@ -26,8 +26,13 @@ describe("contract codegen (R4)", () => {
     expect(Object.keys(schemas).sort()).toEqual([
       "llm-completion-request",
       "llm-completion-result",
+      "scene-spec",
       "world-api-call",
     ]);
+
+    const scene = schemas["scene-spec"] as { properties?: Record<string, unknown> };
+    expect(scene.properties).toHaveProperty("species");
+    expect(scene.properties).toHaveProperty("relationships");
 
     for (const dir of OUT_DIRS) {
       mkdirSync(dir, { recursive: true });

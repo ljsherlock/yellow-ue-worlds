@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "species": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "species": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "animal",
+              "plant",
+              "vehicle",
+              "feature"
+            ]
+          },
+          "diet": {
+            "default": "none",
+            "type": "string",
+            "enum": [
+              "predator",
+              "prey",
+              "none"
+            ]
+          },
+          "count": {
+            "default": 1,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 500
+          },
+          "maxSpeed": {
+            "default": 6,
+            "type": "number",
+            "minimum": 0
+          },
+          "radius": {
+            "default": 1,
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "color": {
+            "default": "#9ca3af",
+            "type": "string"
+          }
+        },
+        "required": [
+          "species",
+          "kind",
+          "diet",
+          "count",
+          "maxSpeed",
+          "radius",
+          "color"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "relationships": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "predicate": {
+            "type": "string",
+            "enum": [
+              "stalks",
+              "flees-from",
+              "herds-with",
+              "drinks-at",
+              "disturbs"
+            ]
+          },
+          "object": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "subject",
+          "predicate",
+          "object"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "weather": {
+      "default": {
+        "preset": "clear",
+        "temperature": 0.5,
+        "timeOfDay": 12
+      },
+      "type": "object",
+      "properties": {
+        "preset": {
+          "default": "clear",
+          "type": "string",
+          "enum": [
+            "clear",
+            "cloudy",
+            "storm",
+            "sunset",
+            "night"
+          ]
+        },
+        "temperature": {
+          "default": 0.5,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "timeOfDay": {
+          "default": 12,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 24
+        }
+      },
+      "required": [
+        "preset",
+        "temperature",
+        "timeOfDay"
+      ],
+      "additionalProperties": false
+    },
+    "bounds": {
+      "default": 100,
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  },
+  "required": [
+    "species",
+    "relationships",
+    "weather",
+    "bounds"
+  ],
+  "additionalProperties": false
+}

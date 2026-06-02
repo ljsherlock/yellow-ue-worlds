@@ -21,6 +21,7 @@
     "@yellow-ue/streaming": "workspace:*",
     "@yellow-ue/tracing": "workspace:*",
     "@yellow-ue/world-api": "workspace:*",
+    "@yellow-ue/world-model": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "react": "^19.2.0",

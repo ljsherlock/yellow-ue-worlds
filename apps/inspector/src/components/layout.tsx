@@ -17,6 +17,7 @@ const navItems: NavItem[] = [
   { to: "/05-pcg-inspector", num: "05", label: "PCG Inspector", blurb: "PCGRunner" },
   { to: "/06-streaming-diagnostics", num: "06", label: "Streaming Diagnostics", blurb: "StreamingMetrics" },
   { to: "/07-pipeline-trace-viewer", num: "07", label: "Pipeline Trace Viewer", blurb: "cross-cutting" },
+  { to: "/08-ecosystem-sim", num: "08", label: "Ecosystem Sim", blurb: "WorldModel + behaviour" },
 ];
 
 export function Layout() {
@@ -31,7 +32,7 @@ export function Layout() {
             <div className="mt-1 text-lg font-semibold leading-tight">
               Inspector
             </div>
-            <div className="text-xs text-muted">phase 1 — all boundaries mocked</div>
+            <div className="text-xs text-muted">phase 2 — track B: living ecosystem</div>
           </NavLink>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">

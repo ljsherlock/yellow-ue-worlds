@@ -1,4 +1,5 @@
 import { WorldAPICallSchema } from "@yellow-ue/world-api";
+import { SceneSpecSchema } from "@yellow-ue/world-model";
 import { z } from "zod";
 
 import {
@@ -20,6 +21,8 @@ export const schemaManifest = [
   { name: "llm-completion-request", schema: LLMCompletionRequestSchema },
   { name: "llm-completion-result", schema: LLMCompletionResultSchema },
   { name: "world-api-call", schema: WorldAPICallSchema },
+  // The director's output contract: the LLM "ecologist" emits one of these.
+  { name: "scene-spec", schema: SceneSpecSchema },
 ] as const;
 
 export function buildSchemas(): Record<string, unknown> {

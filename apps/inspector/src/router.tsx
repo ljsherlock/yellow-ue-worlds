@@ -9,6 +9,7 @@ import { RcRoundTripPage } from "@/pages/04-rc-round-trip";
 import { PcgInspectorPage } from "@/pages/05-pcg-inspector";
 import { StreamingDiagnosticsPage } from "@/pages/06-streaming-diagnostics";
 import { PipelineTraceViewerPage } from "@/pages/07-pipeline-trace-viewer";
+import { EcosystemSimPage } from "@/pages/08-ecosystem-sim";
 
 export const router = createBrowserRouter([
   {
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { path: "05-pcg-inspector", element: <PcgInspectorPage /> },
       { path: "06-streaming-diagnostics", element: <StreamingDiagnosticsPage /> },
       { path: "07-pipeline-trace-viewer", element: <PipelineTraceViewerPage /> },
+      { path: "08-ecosystem-sim", element: <EcosystemSimPage /> },
     ],
   },
 ]);
