@@ -1,0 +1,36 @@
+[project]
+name = "yellow-ue-brain"
+version = "0.0.1"
+description = "The LLM brain — a LangGraph agent that turns prompts into validated WorldAPI tool calls. Implements the LLMClient boundary behind an HTTP service."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "langgraph>=0.2.0",
+    "jsonschema>=4.21.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+]
+
+[project.optional-dependencies]
+# Real provider — needs a GOOGLE_API_KEY at runtime. Not required for tests
+# (the FakeProvider mirrors the contract deterministically).
+gemini = [
+    "langchain-google-genai>=2.0.0",
+    "langchain-core>=0.3.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/brain"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

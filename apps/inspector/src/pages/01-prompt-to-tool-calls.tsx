@@ -1,4 +1,5 @@
-import type { LLMCompletionResult } from "@yellow-ue/llm-brain";
+import type { LLMClient, LLMCompletionResult } from "@yellow-ue/llm-brain";
+import { BrainHttpClient } from "@yellow-ue/llm-brain/http";
 import { MockLLMClient } from "@yellow-ue/llm-brain/mock";
 import { InMemorySink, setSink, withTrace } from "@yellow-ue/tracing";
 import { useState } from "react";
@@ -6,6 +7,9 @@ import { useState } from "react";
 import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+const BRAIN_URL = "http://localhost:8000";
 
 const examplePrompts = [
   "make it stormy",
@@ -17,42 +21,84 @@ const examplePrompts = [
   "tell me a joke",
 ];
 
+type Source = "mock" | "live";
+
 export function PromptToToolCallsPage() {
-  const [{ client, sink }] = useState(() => {
+  const [{ clients, sink }] = useState(() => {
     const sink = new InMemorySink();
     setSink(sink);
-    return { client: new MockLLMClient(), sink };
+    const clients: Record<Source, LLMClient> = {
+      mock: new MockLLMClient(),
+      live: new BrainHttpClient({ baseUrl: BRAIN_URL }),
+    };
+    return { clients, sink };
   });
 
+  const [source, setSource] = useState<Source>("mock");
   const [prompt, setPrompt] = useState("make it stormy and plant 50 oaks");
   const [result, setResult] = useState<LLMCompletionResult | null>(null);
   const [lastMs, setLastMs] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const run = async (p: string) => {
     if (!p.trim() || running) return;
     setRunning(true);
-    const result = await withTrace(undefined, () => client.complete({ prompt: p }));
-    const last = sink.byPrefix("llm-brain.").at(-1);
-    setResult(result);
-    setLastMs(last?.duration_ms ?? null);
-    setRunning(false);
+    setError(null);
+    try {
+      const result = await withTrace(undefined, () =>
+        clients[source].complete({ prompt: p }),
+      );
+      const last = sink.byPrefix("llm-brain.").at(-1);
+      setResult(result);
+      setLastMs(last?.duration_ms ?? null);
+    } catch (err) {
+      setError(
+        source === "live"
+          ? `Couldn't reach the brain at ${BRAIN_URL}. Start it with \`cd packages/brain && uv run python -m brain\`. (${String(err)})`
+          : String(err),
+      );
+    } finally {
+      setRunning(false);
+    }
   };
 
   return (
     <PageShell
       title="01 — Prompt → Tool Calls"
-      subtitle="Type a prompt; see exactly which WorldAPI tool calls the brain emits. Deterministic, zero-cost, reproducible."
+      subtitle="Type a prompt; see exactly which WorldAPI tool calls the brain emits. Same LLMClient interface, two implementations."
       boundary="LLMClient"
-      package="@yellow-ue/llm-brain (mock)"
-      status="mock"
+      package={source === "live" ? "@yellow-ue/llm-brain/http → Python brain" : "@yellow-ue/llm-brain (mock)"}
+      status={source === "live" ? "real" : "mock"}
     >
       <div className="flex flex-col gap-6">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Prompt</CardTitle>
+            <div className="flex rounded-md border border-border p-0.5 text-xs">
+              {(["mock", "live"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSource(s)}
+                  className={cn(
+                    "rounded px-2 py-1 font-mono-ui transition-colors",
+                    source === s ? "bg-zinc-800 text-fg" : "text-muted hover:text-fg",
+                  )}
+                >
+                  {s === "mock" ? "mock" : "live brain"}
+                </button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
+            {source === "live" && (
+              <p className="rounded border border-border bg-zinc-900/40 px-2 py-1 text-xs text-muted">
+                Live mode POSTs to the Python LangGraph brain at{" "}
+                <span className="font-mono-ui text-accent">{BRAIN_URL}</span>. Its
+                internal spans are folded into the pipeline trace (page 07).
+              </p>
+            )}
             <form
               className="flex gap-2"
               onSubmit={(e) => {
@@ -87,6 +133,12 @@ export function PromptToToolCallsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {error && (
+          <Card>
+            <CardContent className="py-4 text-sm text-danger">{error}</CardContent>
+          </Card>
+        )}
 
         {result && (
           <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">

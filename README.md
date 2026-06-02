@@ -21,7 +21,8 @@ state is persisted in a temporal knowledge graph so the world has memory.
 | Monorepo bootstrap | ✅ Complete 2026-06-01 | pnpm 11.5.0 + uv (Python 3.14), workspace scaffolded |
 | Phase 0 — Foundation | ✅ Complete 2026-06-01 | Workspace + rules + `world-api` + `tracing` + inspector skeleton + page 07 keystone, 52 tests green |
 | Phase 1 — Inspector pages 01–07 | ✅ Complete 2026-06-01 | All boundaries mocked behind R2 interfaces; 7 live pages; 94 tests green |
-| Real components | ⏳ Not started | Phase 2 of MVP plan |
+| Phase 2 Track A — Brain | ✅ Complete 2026-06-01 | Python LangGraph brain (`packages/brain`) + `BrainHttpClient`; R4 Zod→JSON-Schema codegen; page 01 mock↔live toggle; 109 tests green (99 TS + 10 py) |
+| Real components (B/C/D) | ⏳ Not started | Phase 2 remaining tracks |
 | GCP infrastructure | ⏳ Not started | Phase 3 of MVP plan |
 | End-to-end loop | ⏳ Not started | Phase 4 of MVP plan |
 
@@ -414,14 +415,25 @@ The goal of the MVP is to prove the full end-to-end loop works:
 
 ### Phase 2 — Real implementations (four parallel tracks)
 
-| Track | Owner-of-attention | Tasks |
-|---|---|---|
-| **A** Brain | Python | LangGraph agent, LLM client adapter, tool router, Postgres checkpointer |
-| **B** Memory | Python | Graphiti integration, schema for world entities, time-travel queries |
-| **C** Bridge | TypeScript | `rc-bridge` HTTP+WS client implementing `WorldAPIClient` interface |
-| **D** UE | C++/Blueprint | Packaged UE 5.7 build with: Pixel Streaming 2, Remote Control, one world API function (`SetSkyColor`), PCG graph triggered by Remote Control |
+| Track | Owner-of-attention | Tasks | Status |
+|---|---|---|---|
+| **A** Brain | Python | LangGraph agent, LLM client adapter, tool router, Postgres checkpointer | ✅ core done 2026-06-01 (checkpointer deferred) |
+| **B** Memory | Python | Graphiti integration, schema for world entities, time-travel queries | ⏳ |
+| **C** Bridge | TypeScript | `rc-bridge` HTTP+WS client implementing `WorldAPIClient` interface | ⏳ |
+| **D** UE | C++/Blueprint | Packaged UE 5.7 build with: Pixel Streaming 2, Remote Control, one world API function (`SetSkyColor`), PCG graph triggered by Remote Control | ⏳ |
 
 Each track replaces a mock from Phase 1 with the real thing. **Inspectors continue to work throughout — they're the integration test.**
+
+#### Track A — Brain ✅ 2026-06-01
+
+- **R4 contract codegen**: `pnpm --filter @yellow-ue/llm-brain codegen` emits the Zod contracts → JSON Schema (`packages/llm-brain/schemas/` + vendored into `packages/brain/src/brain/_schemas/`). The gen step also runs on every `pnpm test`, so the cross-language contract can't drift. **Python never hand-maintains a parallel contract — it validates against the generated artifact.**
+- **`packages/brain` (Python, uv, 3.12)**: `LLMProvider` Protocol + `FakeProvider` (deterministic, mirrors the Phase 1 mock — tests need no key) + `GeminiProvider` (real, lazy-imported, `--extra gemini` + `GOOGLE_API_KEY`). LangGraph agent (`plan → assemble`) validates its output against the generated schema. FastAPI `POST /complete` → `{ result, spans }`, `GET /health`.
+- **Cross-process tracing (R3)**: a Python `@boundary` shim emits BoundaryEvents byte-compatible with the TS shape; the service returns its spans, and `BrainHttpClient` re-parents them (`brain:*`) under `llm-brain.complete` — so page 07 shows TS → HTTP → Python agent → provider in one tree.
+- **`BrainHttpClient implements LLMClient`** (`@yellow-ue/llm-brain/http`): page 01 gained a **mock ↔ live brain** toggle; flipping to "live brain" POSTs to `http://localhost:8000` with zero other changes (R2 proven end-to-end).
+- **Verified**: 99 TS tests + 10 Python tests green; inspector builds + typechecks clean; live service smoke-tested (`uv run python -m brain` → real `/complete` round-trip).
+- **Deferred**: real Gemini call (needs key), LangGraph Postgres checkpointer (durable multi-turn), and wiring the brain to read world state from Track B's memory store.
+
+Run the brain: `cd packages/brain && uv sync && uv run python -m brain` (FakeProvider by default; no key needed).
 
 ### Phase 3 — GCP infrastructure
 
