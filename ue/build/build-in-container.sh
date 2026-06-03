@@ -8,8 +8,12 @@
 #
 # Three steps in one long-lived container:
 #   [1/3] build the editor target (compiles our C++ WorldDirector),
-#   [2/3] run Scripts/make_map.py headless to (re)generate /Game/Maps/Spike,
+#   [2/3] run Scripts/make_map.py headless to (re)generate /Game/Maps/Spike
+#         (skipped when SKIP_MAKE_MAP=1, e.g. cooking an imported map),
 #   [3/3] RunUAT BuildCookRun → cook + stage + pak + archive a Linux build.
+#
+# Map is chosen by MAP (default /Game/Maps/Spike). To cook an imported map
+# instead: MAP=/Game/<pack>/<...>/Map SKIP_MAKE_MAP=1 bash build-in-container.sh
 set -euo pipefail
 
 # --- config (override via env) ---------------------------------------------
@@ -88,26 +92,44 @@ run "$ENGINE/Engine/Build/BatchFiles/Linux/Build.sh" \
   YellowWorldEditor Linux Development \
   -project=/project/YellowWorld.uproject
 
-# Megascans JPG import needs Slate; -nullrhi crashes in ImportAssetTasks.
-QUARRY_JPG_DIR="/project/ThirdParty/Megascans/south_african_slate_quarry/uddmcgbia"
-if [[ -d "$QUARRY_JPG_DIR" ]] && [[ "${YELLOW_QUARRY_GROUND:-1}" != "0" ]]; then
-  echo "[2a/3] Importing quarry textures (xvfb — Slate required, no -nullrhi) ..."
-  if command -v xvfb-run >/dev/null 2>&1; then
-    run xvfb-run -a "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
+# Steps [2a]+[2b] build the procedural spike level. Skip them when cooking an
+# imported map (e.g. the Savannah pack): set SKIP_MAKE_MAP=1 (vm.sh sets this
+# automatically when YELLOW_MAP is given). Default keeps the spike behaviour.
+if [[ "${SKIP_MAKE_MAP:-0}" == "1" ]]; then
+  echo "[2/3] SKIP_MAKE_MAP=1 — skipping quarry import + make_map.py (cooking MAP=$MAP as-is)."
+  # Imported packs spawn the pawn at the map edge / origin. Re-centre the
+  # PlayerStart on the terrain so the streamed view starts mid-map. Opt out with
+  # CENTER_START=0. Pass MAP into the container (docker exec doesn't inherit it).
+  if [[ "${CENTER_START:-1}" != "0" ]]; then
+    echo "[2c/3] Centering PlayerStart on $MAP (center_player_start.py, -nullrhi) ..."
+    $DOCKER exec -i -e MAP="$MAP" --workdir / "$CONTAINER" \
+      "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
       /project/YellowWorld.uproject \
-      -run=pythonscript -script=/project/Scripts/import_quarry_textures.py \
-      -unattended -nosplash -nopause
-  else
-    echo "WARN: xvfb-run not found — skipping quarry import; make_map will use procedural sand"
-    echo "      Install on VM: sudo apt-get install -y xvfb"
+      -run=pythonscript -script=/project/Scripts/center_player_start.py \
+      -unattended -nullrhi -nosplash -nopause
   fi
-fi
+else
+  # Megascans JPG import needs Slate; -nullrhi crashes in ImportAssetTasks.
+  QUARRY_JPG_DIR="/project/ThirdParty/Megascans/south_african_slate_quarry/uddmcgbia"
+  if [[ -d "$QUARRY_JPG_DIR" ]] && [[ "${YELLOW_QUARRY_GROUND:-1}" != "0" ]]; then
+    echo "[2a/3] Importing quarry textures (xvfb — Slate required, no -nullrhi) ..."
+    if command -v xvfb-run >/dev/null 2>&1; then
+      run xvfb-run -a "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
+        /project/YellowWorld.uproject \
+        -run=pythonscript -script=/project/Scripts/import_quarry_textures.py \
+        -unattended -nosplash -nopause
+    else
+      echo "WARN: xvfb-run not found — skipping quarry import; make_map will use procedural sand"
+      echo "      Install on VM: sudo apt-get install -y xvfb"
+    fi
+  fi
 
-echo "[2b/3] Generating spike level (Scripts/make_map.py, -nullrhi) ..."
-run "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
-  /project/YellowWorld.uproject \
-  -run=pythonscript -script=/project/Scripts/make_map.py \
-  -unattended -nullrhi -nosplash -nopause
+  echo "[2b/3] Generating spike level (Scripts/make_map.py, -nullrhi) ..."
+  run "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
+    /project/YellowWorld.uproject \
+    -run=pythonscript -script=/project/Scripts/make_map.py \
+    -unattended -nullrhi -nosplash -nopause
+fi
 
 echo "[3/3] Cooking + packaging (RunUAT BuildCookRun) ..."
 run "$ENGINE/Engine/Build/BatchFiles/RunUAT.sh" BuildCookRun \

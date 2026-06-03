@@ -12,6 +12,11 @@ PACKAGED="${PACKAGED:-$PROJECT_DIR/Packaged/Linux}"
 INFRA_DIR="${INFRA_DIR:-$HOME/PixelStreamingInfrastructure}"
 INFRA_BRANCH="${INFRA_BRANCH:-UE5.7}"
 RC="${RC:-0}"   # 1 => enable Remote Control (Spike 1b)
+# STREAM_MAP (optional): open this map instead of the packaged GameDefaultMap.
+# Passed as the first positional arg to the launcher. Unset => boots the
+# DefaultEngine.ini default map (the spike). e.g.
+#   STREAM_MAP=/Game/8KSavannahLandscapePack/Scenes/Landscapes/Landscape_1
+STREAM_MAP="${STREAM_MAP:-}"
 
 # Locate the packaged launcher (.sh next to the staged build).
 APP_SH="$PACKAGED/YellowWorld.sh"
@@ -61,9 +66,15 @@ if [[ "$RC" == "1" ]]; then
   echo "Remote Control enabled (HTTP 30010 / WS 30020)."
 fi
 
+MAP_ARG=()
+if [[ -n "$STREAM_MAP" ]]; then
+  MAP_ARG=("$STREAM_MAP")
+  echo "Opening map: $STREAM_MAP"
+fi
+
 echo
 echo ">>> Once it's running, open:  http://${PUBLIC_IP:-<VM_PUBLIC_IP>}"
 echo
-exec "$APP_SH" -RenderOffscreen -AudioMixer -Unattended \
+exec "$APP_SH" ${MAP_ARG[@]+"${MAP_ARG[@]}"} -RenderOffscreen -AudioMixer -Unattended \
   -PixelStreamingSignallingURL=ws://127.0.0.1:8888 \
   ${RC_FLAGS[@]+"${RC_FLAGS[@]}"}

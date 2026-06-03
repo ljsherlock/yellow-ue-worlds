@@ -85,6 +85,18 @@ ssh_command() {
 
 cmd="${1:-help}"; shift || true
 
+# Optional: cook/stream an imported map instead of the procedural spike. Set
+# YELLOW_MAP to the map's /Game package path (e.g. the Savannah pack):
+#   YELLOW_MAP=/Game/8KSavannahLandscapePack/Scenes/Landscapes/Landscape_1 npm run ue:build
+# Threaded to the remote build (MAP + SKIP_MAKE_MAP) and run (STREAM_MAP).
+# Unset => unchanged spike behaviour.
+BUILD_MAP_ENV=""
+RUN_MAP_ENV=""
+if [[ -n "${YELLOW_MAP:-}" ]]; then
+  BUILD_MAP_ENV="MAP='${YELLOW_MAP}' SKIP_MAKE_MAP=1 "
+  RUN_MAP_ENV="STREAM_MAP='${YELLOW_MAP}' "
+fi
+
 case "$cmd" in
   # --- lifecycle ----------------------------------------------------------
   provision) PROJECT="$PROJECT" ZONE="$ZONE" INSTANCE="$INSTANCE" bash "$UE_DIR/gcp/provision-l4.sh" ;;
@@ -132,7 +144,7 @@ case "$cmd" in
   fix-perms) ssh_command 'sudo chown -R "$USER:$USER" ~/ue' ;;
 
   # --- build & run (remote) ----------------------------------------------
-  build) ssh_command 'PROJECT_DIR=$HOME/ue/project/YellowWorld bash ~/ue/build/build-in-container.sh' ;;
+  build) ssh_command "PROJECT_DIR=\$HOME/ue/project/YellowWorld ${BUILD_MAP_ENV}bash ~/ue/build/build-in-container.sh" ;;
   stage-fab) bash "$UE_DIR/scripts/stage-fab-from-mac.sh" ;;
   fab-import)
     echo "=== [1/3] Stage Fab plugin from Mac UE install ==="
@@ -165,11 +177,11 @@ case "$cmd" in
     ssh -i "$KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
       -L "${local_port}:127.0.0.1:5900" "${SSH_USER}@${vm_ip}" -N ;;
   run)
-    ssh_command 'tmux kill-session -t stream 2>/dev/null; tmux new-session -d -s stream "RC=0 bash ~/ue/run/run-stream.sh 2>&1 | tee /tmp/stream.log"; echo started'
+    ssh_command "tmux kill-session -t stream 2>/dev/null; tmux new-session -d -s stream \"${RUN_MAP_ENV}RC=0 bash ~/ue/run/run-stream.sh 2>&1 | tee /tmp/stream.log\"; echo started"
     echo "Streaming in tmux 'stream'.  Open: http://$(ip)"
     echo "Watch:  npm run ue:logs:app  (UE app)   |   npm run ue:logs  (signalling)" ;;
   run-rc)
-    ssh_command 'tmux kill-session -t stream 2>/dev/null; tmux new-session -d -s stream "RC=1 bash ~/ue/run/run-stream.sh 2>&1 | tee /tmp/stream.log"; echo started'
+    ssh_command "tmux kill-session -t stream 2>/dev/null; tmux new-session -d -s stream \"${RUN_MAP_ENV}RC=1 bash ~/ue/run/run-stream.sh 2>&1 | tee /tmp/stream.log\"; echo started"
     echo "Streaming (Remote Control ON) in tmux 'stream'.  Open: http://$(ip)" ;;
   stop-app)
     ssh_command 'tmux kill-session -t stream 2>/dev/null; pkill -f "[B]inaries/Linux/YellowWorld" 2>/dev/null; pkill -f SignallingWebServer 2>/dev/null; pkill -f cirrus 2>/dev/null; echo stopped; true' ;;
