@@ -178,7 +178,7 @@ shown): `UE_INSTANCE=ue-pixelspike`, `UE_ZONE=us-central1-a`,
 | `ue:destroy` | delete the VM (`gcp/teardown.sh`) |
 | `ue:status` / `ue:ip` | instance state + public IP |
 | `ue:ssh` | interactive shell on the VM (extra args passed through) |
-| `ue:sync` | `rsync` this `ue/` tree → `~/ue` on the VM (skips `Packaged/Intermediate/Saved/Binaries/Build/.git`) |
+| `ue:sync` | `rsync` this `ue/` tree → `~/ue` on the VM (skips `Packaged/Intermediate/Saved/Binaries/Build/Content/Samples/.git`) |
 | `ue:fix-perms` | `chown` `~/ue` back to you (run once if a pre-fix build left `ue4`-owned files and `ue:sync` errors) |
 | `ue:build` | headless cook + package inside `dev-5.7` (`build/build-in-container.sh`) |
 | `ue:run` / `ue:run:rc` | stream the packaged build (`:rc` also enables Remote Control) in a `tmux` session `stream` |

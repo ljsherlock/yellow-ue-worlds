@@ -14,3 +14,6 @@ Saved/
 # The spike level is generated headlessly by Scripts/make_map.py at build time,
 # so we don't commit the binary .umap.
 Content/Maps/Spike.umap
+
+# Megascans source textures (large). Stage locally via Scripts/stage_quarry_ground.sh
+ThirdParty/

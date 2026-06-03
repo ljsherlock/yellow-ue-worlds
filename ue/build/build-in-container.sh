@@ -17,7 +17,7 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/ue/project/YellowWorld}"
 UE_TAG="${UE_TAG:-dev-5.7}"
 IMAGE="${IMAGE:-ghcr.io/epicgames/unreal-engine:${UE_TAG}}"
 ENGINE="${ENGINE:-/home/ue4/UnrealEngine}"
-DOCKER="${DOCKER:-docker}"
+DOCKER="${DOCKER:-}"
 GPUS="${GPUS:---gpus all}"
 CONTAINER="${CONTAINER:-yellow-build}"
 MAP="${MAP:-/Game/Maps/Spike}"
@@ -25,10 +25,31 @@ MAP="${MAP:-/Game/Maps/Spike}"
 [[ -f "$PROJECT_DIR/YellowWorld.uproject" ]] \
   || { echo "No YellowWorld.uproject under $PROJECT_DIR — did you 'npm run ue:sync'?"; exit 1; }
 
-if ! $DOCKER image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "Image $IMAGE not present locally. Pull it first (after 'docker login ghcr.io'):"
-  echo "  $DOCKER pull $IMAGE"
+# Pick the working docker invocation: plain if the user is in the docker group,
+# else sudo. (A permission-denied 'docker' would otherwise masquerade as a
+# missing image.) Honour an explicit $DOCKER override.
+if [[ -n "${DOCKER:-}" ]]; then
+  :
+elif docker info >/dev/null 2>&1; then
+  DOCKER="docker"
+elif sudo docker info >/dev/null 2>&1; then
+  DOCKER="sudo docker"
+else
+  echo "Cannot talk to the Docker daemon (tried 'docker' and 'sudo docker')."
+  echo "Is Docker installed/running on the VM? (startup.sh installs it.)"
   exit 1
+fi
+echo "Using docker as: $DOCKER"
+
+# Ensure the dev image is present; if not, try to pull it (login creds from the
+# one-time 'docker login ghcr.io' are cached in ~/.docker/config.json).
+if ! $DOCKER image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "Image $IMAGE not present — pulling (needs a prior 'docker login ghcr.io') ..."
+  if ! $DOCKER pull "$IMAGE"; then
+    echo "Pull failed. Authenticate once, then re-run the build:"
+    echo "  echo <YOUR_GH_PAT> | $DOCKER login ghcr.io -u <YOUR_GH_USERNAME> --password-stdin"
+    exit 1
+  fi
 fi
 
 # Remember who owns the project on the host so we can hand it back at the end —
@@ -67,7 +88,22 @@ run "$ENGINE/Engine/Build/BatchFiles/Linux/Build.sh" \
   YellowWorldEditor Linux Development \
   -project=/project/YellowWorld.uproject
 
-echo "[2/3] Generating spike level (Scripts/make_map.py) ..."
+# Megascans JPG import needs Slate; -nullrhi crashes in ImportAssetTasks.
+QUARRY_JPG_DIR="/project/ThirdParty/Megascans/south_african_slate_quarry/uddmcgbia"
+if [[ -d "$QUARRY_JPG_DIR" ]] && [[ "${YELLOW_QUARRY_GROUND:-1}" != "0" ]]; then
+  echo "[2a/3] Importing quarry textures (xvfb — Slate required, no -nullrhi) ..."
+  if command -v xvfb-run >/dev/null 2>&1; then
+    run xvfb-run -a "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
+      /project/YellowWorld.uproject \
+      -run=pythonscript -script=/project/Scripts/import_quarry_textures.py \
+      -unattended -nosplash -nopause
+  else
+    echo "WARN: xvfb-run not found — skipping quarry import; make_map will use procedural sand"
+    echo "      Install on VM: sudo apt-get install -y xvfb"
+  fi
+fi
+
+echo "[2b/3] Generating spike level (Scripts/make_map.py, -nullrhi) ..."
 run "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
   /project/YellowWorld.uproject \
   -run=pythonscript -script=/project/Scripts/make_map.py \

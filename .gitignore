@@ -2,6 +2,9 @@
 node_modules/
 dist/
 build/
+# Staged Fab plugin from Mac Launcher (large; re-stage with npm run ue:stage-fab)
+ue/third-party/FabPlugin/Fab/
+
 # ...but the UE VM build scripts live in ue/build/ and MUST be tracked
 # (a blanket build/ rule silently dropped build-in-container.sh once before).
 !ue/build/

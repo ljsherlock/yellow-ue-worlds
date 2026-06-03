@@ -6,8 +6,7 @@
 #include "Components/SkyLightComponent.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Components/ExponentialHeightFogComponent.h"
-#include "Engine/VolumetricCloud.h"
-#include "Components/VolumetricCloudComponent.h"
+#include "Components/VolumetricCloudComponent.h" // also declares AVolumetricCloud
 #include "Engine/WindDirectionalSource.h"
 #include "Components/WindDirectionalSourceComponent.h"
 #include "Engine/PostProcessVolume.h"
@@ -58,7 +57,40 @@ void AWorldDirector::BeginPlay()
 {
 	Super::BeginPlay();
 	CacheActors();
+	ApplyManualExposure();
 	ApplySunRotation();
+}
+
+void AWorldDirector::ApplyManualExposure()
+{
+	// Deterministic exposure: switch metering to Manual so the renderer NEVER
+	// eye-adapts. A given time of day then always looks the same, and the scene
+	// can't blow out to white the way auto-exposure did. Brightness is driven
+	// purely by the sun/sky intensities we set per time-of-day. (Epic 5.7 docs:
+	// "Manual metering mode allows ... a single, fixed exposure value that is
+	// unaffected by the luminance in the scene.")
+	if (!PostProcess)
+	{
+		return;
+	}
+	FPostProcessSettings& S = PostProcess->Settings;
+	S.bOverride_AutoExposureMethod = true;
+	S.AutoExposureMethod = AEM_Manual;
+	// Keep exposure in linear-EV terms, independent of any physical-camera
+	// (ISO/aperture/shutter) settings, so BaseExposureComp behaves predictably.
+	S.bOverride_AutoExposureApplyPhysicalCameraExposure = true;
+	S.AutoExposureApplyPhysicalCameraExposure = 0;
+	ApplyExposure(0.f);
+}
+
+void AWorldDirector::ApplyExposure(float OffsetEV)
+{
+	if (!PostProcess)
+	{
+		return;
+	}
+	PostProcess->Settings.bOverride_AutoExposureBias = true;
+	PostProcess->Settings.AutoExposureBias = BaseExposureComp + OffsetEV;
 }
 
 void AWorldDirector::CacheActors()
@@ -122,16 +154,36 @@ void AWorldDirector::SetTimeOfDay(float Hours)
 {
 	Hours = FMath::Fmod(FMath::Max(Hours, 0.f), 24.f);
 
-	// Elevation peaks at noon (sin curve, 0 at 6/18, 1 at 12). Below the horizon
-	// before 6 / after 18 -> a small negative pitch reads as night.
-	const float Elevation = FMath::Sin((Hours - 6.f) / 12.f * PI);
-	CurrentSunPitch = FMath::Lerp(0.f, 85.f, FMath::Clamp(Elevation, 0.f, 1.f));
-	if (Elevation <= 0.f)
-	{
-		CurrentSunPitch = -5.f; // dipped below horizon
-	}
+	// Continuous arc so EVERY hour is a distinct, visible sun position:
+	//  - elevation: -90 (deep night) .. +90 (noon overhead), 0 at 6h/18h,
+	//  - azimuth: sweeps the sky across the day (east at dawn -> west at dusk).
+	const float ElevationDeg = 90.f * FMath::Sin((Hours - 6.f) / 12.f * PI);
+	const float AzimuthDeg = (Hours / 24.f) * 360.f - 180.f;
+	CurrentSunPitch = ElevationDeg;
+	CurrentSunYaw = AzimuthDeg;
 	ApplySunRotation();
-	Notify(FString::Printf(TEXT("SetTimeOfDay %.1fh -> pitch %.1f"), Hours, CurrentSunPitch));
+
+	// Drive brightness from the sun's height so dusk/night dim automatically.
+	// DayFactor: 0 at/below the horizon, 1 high in the sky.
+	const float DayFactor = FMath::Clamp(ElevationDeg / 60.f, 0.f, 1.f);
+	if (Sun)
+	{
+		if (UDirectionalLightComponent* C = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
+		{
+			// Direct sun fades to nothing below the horizon (no negative light).
+			C->SetIntensity(FMath::Lerp(0.f, 110000.f, DayFactor));
+		}
+	}
+	if (Sky)
+	{
+		if (USkyLightComponent* C = Sky->GetLightComponent())
+		{
+			// Ambient floor keeps night moonlit-dark, never pure black.
+			C->SetIntensity(FMath::Lerp(0.25f, 1.0f, DayFactor));
+		}
+	}
+	Notify(FString::Printf(TEXT("SetTimeOfDay %.1fh -> elev %.1f az %.1f day %.2f"),
+		Hours, ElevationDeg, AzimuthDeg, DayFactor));
 }
 
 void AWorldDirector::SetSunIntensity(float Lux)
@@ -261,7 +313,14 @@ void AWorldDirector::SetExposure(float ExposureBias)
 		PostProcess->Settings.bOverride_AutoExposureBias = true;
 		PostProcess->Settings.AutoExposureBias = ExposureBias;
 	}
-	Notify(FString::Printf(TEXT("SetExposure %.2f EV"), ExposureBias));
+	Notify(FString::Printf(TEXT("SetExposure %.2f EV (absolute)"), ExposureBias));
+}
+
+void AWorldDirector::SetBaseExposure(float ExposureComp)
+{
+	BaseExposureComp = ExposureComp;
+	ApplyExposure(0.f);
+	Notify(FString::Printf(TEXT("SetBaseExposure %.2f EV"), BaseExposureComp));
 }
 
 void AWorldDirector::SetColorGrade(float WhiteTemp, float Saturation, float Contrast)
@@ -353,6 +412,7 @@ void AWorldDirector::SetWeatherPreset(const FString& Preset)
 		SetVolumetricFog(false);
 		SetCloudiness(0.0f);
 		SetColorGrade(6500.f, 1.05f, 1.0f);
+		ApplyExposure(0.f);
 	}
 	else if (P == TEXT("cloudy"))
 	{
@@ -363,6 +423,7 @@ void AWorldDirector::SetWeatherPreset(const FString& Preset)
 		SetFog(0.02f, 0.2f);
 		SetCloudiness(0.8f);
 		SetColorGrade(7000.f, 0.85f, 0.95f);
+		ApplyExposure(0.f);
 	}
 	else if (P == TEXT("storm"))
 	{
@@ -375,7 +436,7 @@ void AWorldDirector::SetWeatherPreset(const FString& Preset)
 		SetFogColor(0.25f, 0.27f, 0.3f);
 		SetCloudiness(1.0f);
 		SetColorGrade(8000.f, 0.7f, 1.15f);
-		SetExposure(-0.5f);
+		ApplyExposure(-0.5f);
 	}
 	else if (P == TEXT("sunset"))
 	{
@@ -387,6 +448,7 @@ void AWorldDirector::SetWeatherPreset(const FString& Preset)
 		SetFogColor(0.8f, 0.5f, 0.3f);
 		SetCloudiness(0.4f);
 		SetColorGrade(3200.f, 1.2f, 1.05f);
+		ApplyExposure(0.f);
 	}
 	else if (P == TEXT("night"))
 	{
@@ -397,7 +459,7 @@ void AWorldDirector::SetWeatherPreset(const FString& Preset)
 		SetFog(0.02f, 0.2f);
 		SetCloudiness(0.3f);
 		SetColorGrade(9000.f, 0.8f, 1.1f);
-		SetExposure(0.5f);
+		ApplyExposure(1.0f);
 	}
 	else if (P == TEXT("dusty"))
 	{
@@ -409,6 +471,7 @@ void AWorldDirector::SetWeatherPreset(const FString& Preset)
 		SetFogColor(0.7f, 0.6f, 0.42f);
 		SetCloudiness(0.2f);
 		SetColorGrade(4500.f, 0.9f, 1.0f);
+		ApplyExposure(0.f);
 	}
 	else if (P == TEXT("misty"))
 	{
@@ -421,10 +484,49 @@ void AWorldDirector::SetWeatherPreset(const FString& Preset)
 		SetFogColor(0.7f, 0.72f, 0.75f);
 		SetCloudiness(0.5f);
 		SetColorGrade(6800.f, 0.8f, 0.9f);
+		ApplyExposure(0.f);
+	}
+	else if (P == TEXT("sunrise"))
+	{
+		SetTimeOfDay(6.5f);
+		SetSunIntensity(20000.f);
+		SetSunTemperature(3000.f);
+		SetSkyLightIntensity(0.9f);
+		SetFog(0.04f, 0.08f);
+		SetFogColor(0.85f, 0.6f, 0.45f);
+		SetCloudiness(0.3f);
+		SetColorGrade(3400.f, 1.15f, 1.0f);
+		ApplyExposure(0.f);
+	}
+	else if (P == TEXT("midday") || P == TEXT("noon"))
+	{
+		SetTimeOfDay(12.f);
+		SetSunIntensity(110000.f);
+		SetSunTemperature(6500.f);
+		SetSkyLightIntensity(1.0f);
+		SetFog(0.004f, 0.2f);
+		SetVolumetricFog(false);
+		SetCloudiness(0.1f);
+		SetColorGrade(6500.f, 1.05f, 1.0f);
+		ApplyExposure(0.f);
+	}
+	else if (P == TEXT("reset") || P == TEXT("default"))
+	{
+		// Neutral, bright, no-drama baseline — the "undo" for any prior mood.
+		SetTimeOfDay(11.f);
+		SetSunIntensity(100000.f);
+		SetSunTemperature(6500.f);
+		SetSkyLightIntensity(1.0f);
+		SetFog(0.005f, 0.2f);
+		SetVolumetricFog(false);
+		SetFogColor(0.5f, 0.55f, 0.6f);
+		SetCloudiness(0.1f);
+		SetColorGrade(6500.f, 1.0f, 1.0f);
+		ApplyExposure(0.f);
 	}
 	else
 	{
-		Notify(FString::Printf(TEXT("Unknown preset '%s' (clear|cloudy|storm|sunset|night|dusty|misty)"), *Preset));
+		Notify(FString::Printf(TEXT("Unknown preset '%s' (clear|cloudy|storm|sunset|sunrise|midday|night|dusty|misty|reset)"), *Preset));
 	}
 }
 

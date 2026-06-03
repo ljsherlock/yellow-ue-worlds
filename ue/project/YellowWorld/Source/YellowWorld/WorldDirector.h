@@ -92,9 +92,15 @@ public:
 
 	// --- Post process / colour grade --------------------------------------
 
-	/** Exposure compensation in EV (negative = darker, positive = brighter). */
+	/** Exposure compensation in EV (negative = darker, positive = brighter).
+	 *  In Manual metering this is the absolute fixed exposure. */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Grade")
 	void SetExposure(float ExposureBias);
+
+	/** Set the deterministic base exposure (EV) that every preset/time is offset
+	 *  from. Lets us re-tune the whole scene's brightness live without a rebuild. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Grade")
+	void SetBaseExposure(float ExposureComp);
 
 	/** White balance (Kelvin), saturation (1=neutral) and contrast (1=neutral). */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Grade")
@@ -133,6 +139,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|World")
 	float CurrentFogDensity = 0.02f;
 
+	/** Deterministic Manual-exposure baseline (EV). Daylight at physical lux needs
+	 *  a large negative value; tune live via SetBaseExposure, then bake here. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|World")
+	float BaseExposureComp = -13.f;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -142,6 +153,13 @@ private:
 
 	/** Lazily create a dynamic material instance on the ground so we can recolour it. */
 	UMaterialInstanceDynamic* GetGroundMID();
+
+	/** Force deterministic Manual metering (no eye-adaptation) so a given time of
+	 *  day always looks identical regardless of what was previously on screen. */
+	void ApplyManualExposure();
+
+	/** Apply BaseExposureComp + a per-mood EV offset to the post-process volume. */
+	void ApplyExposure(float OffsetEV);
 
 	/** Apply CurrentSunPitch/Yaw to the cached directional light. */
 	void ApplySunRotation();
