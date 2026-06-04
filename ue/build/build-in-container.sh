@@ -92,6 +92,14 @@ run "$ENGINE/Engine/Build/BatchFiles/Linux/Build.sh" \
   YellowWorldEditor Linux Development \
   -project=/project/YellowWorld.uproject
 
+# Compile-only validation switch: stop right after the editor target builds.
+# Useful for verifying new C++ (e.g. CreatureDirector/SceneCreature) compiles
+# without paying for the map-author + cook + package passes.
+if [[ "${BUILD_ONLY:-0}" == "1" ]]; then
+  echo "BUILD_ONLY=1 — editor target compiled OK, skipping map/cook/package."
+  exit 0
+fi
+
 # Steps [2a]+[2b] build the procedural spike level. Skip them when cooking an
 # imported map (e.g. the Savannah pack): set SKIP_MAKE_MAP=1 (vm.sh sets this
 # automatically when YELLOW_MAP is given). Default keeps the spike behaviour.
@@ -144,6 +152,18 @@ if [[ "${SKIP_MAKE_MAP:-0}" == "1" ]]; then
       $DOCKER exec "$CONTAINER" bash -lc 'tail -30 /tmp/water-author.log' || true
       exit 1
     fi
+  elif [[ "${ADD_CREATURES:-0}" == "1" ]]; then
+    # Bake the ACreatureDirector into the map so Remote Control can address it at
+    # runtime. A plain AActor needs no Slate, so -nullrhi is fine (unlike the
+    # water lake). Creature types/instances are driven at runtime via RC; the
+    # pack is force-cooked via DirectoriesToAlwaysCook. The director's object
+    # path is logged — copy it into the runtime scene driver.
+    echo "[2cr/3] Authoring CreatureDirector into $MAP (add_creatures.py, -nullrhi) ..."
+    $DOCKER exec -i -e MAP="$MAP" --workdir / "$CONTAINER" \
+      "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
+      /project/YellowWorld.uproject \
+      -run=pythonscript -script=/project/Scripts/add_creatures.py \
+      -unattended -nullrhi -nosplash -nopause
   elif [[ "${CENTER_START:-1}" != "0" ]]; then
     # Imported packs spawn the pawn at the map edge / origin. Re-centre the
     # PlayerStart on the terrain so the streamed view starts mid-map. Opt out with
