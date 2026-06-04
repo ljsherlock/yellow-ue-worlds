@@ -97,10 +97,57 @@ run "$ENGINE/Engine/Build/BatchFiles/Linux/Build.sh" \
 # automatically when YELLOW_MAP is given). Default keeps the spike behaviour.
 if [[ "${SKIP_MAKE_MAP:-0}" == "1" ]]; then
   echo "[2/3] SKIP_MAKE_MAP=1 — skipping quarry import + make_map.py (cooking MAP=$MAP as-is)."
-  # Imported packs spawn the pawn at the map edge / origin. Re-centre the
-  # PlayerStart on the terrain so the streamed view starts mid-map. Opt out with
-  # CENTER_START=0. Pass MAP into the container (docker exec doesn't inherit it).
-  if [[ "${CENTER_START:-1}" != "0" ]]; then
+  if [[ "${ADD_WATER:-0}" == "1" ]]; then
+    # Author a real Water plugin lake. AWaterBodyLake's spawn asserts on Slate
+    # (CurrentBaseApplication.IsValid()) in a -nullrhi commandlet, so we must
+    # drive the FULL editor headless under xvfb and run the script on first tick.
+    # add_water_lake.py also repositions the PlayerStart over the lake, so this
+    # supersedes the [2c] centering step. Tunable via WATER_X/Y/Z/R + SPAWN_*.
+    echo "[2w/3] Authoring water lake via full editor (xvfb — Slate required) ..."
+    $DOCKER exec -u root "$CONTAINER" bash -lc \
+      'command -v xvfb-run >/dev/null 2>&1 || { export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq xvfb mesa-vulkan-drivers; }'
+    # Run the editor detached; it commonly wedges in the render loop AFTER the
+    # (synchronous) save, so we poll the log for the save marker and then kill it
+    # rather than waiting on a clean QUIT_EDITOR.
+    $DOCKER exec -d \
+      -e MAP="$MAP" -e WATER_X -e WATER_Y -e WATER_Z -e WATER_R \
+      -e WATER_CARVE -e SPAWN_OVER_LAKE -e SPAWN_HEIGHT -e SPAWN_PITCH \
+      --workdir / "$CONTAINER" bash -lc \
+      "xvfb-run -a -s '-screen 0 320x240x24' '$ENGINE/Engine/Binaries/Linux/UnrealEditor' \
+        /project/YellowWorld.uproject \
+        -ExecCmds='t.MaxFPS 8, py /project/Scripts/add_water_lake.py' \
+        -norhithread -unattended -nosplash -nopause -ResX=320 -ResY=240 -stdout \
+        > /tmp/water-author.log 2>&1"
+    water_ok=0
+    for _ in $(seq 1 120); do   # up to ~20 min for a cold-DDC first author
+      if $DOCKER exec "$CONTAINER" bash -lc 'grep -aq "\[water\] saved" /tmp/water-author.log 2>/dev/null'; then
+        water_ok=1; break
+      fi
+      if $DOCKER exec "$CONTAINER" bash -lc 'grep -aqE "Fatal error|Signal 1[12]|appError" /tmp/water-author.log 2>/dev/null'; then
+        break
+      fi
+      sleep 10
+    done
+    $DOCKER exec -u root "$CONTAINER" bash -lc 'pkill -9 -f UnrealEditor; pkill -9 -f Xvfb; true'
+    if [[ "$water_ok" == "1" ]]; then
+      echo "[2w/3] Water lake authored + saved into $MAP."
+      # Tearing the xvfb editor down and immediately cooking in the same run has
+      # proven flaky (the run dies right after the save). AUTHOR_ONLY=1 lets us
+      # author cleanly here, then run a separate cook-only pass (ADD_WATER=0
+      # CENTER_START=0) which is reliable.
+      if [[ "${AUTHOR_ONLY:-0}" == "1" ]]; then
+        echo "AUTHOR_ONLY=1 — authored only, skipping cook (run a cook-only pass next)."
+        exit 0
+      fi
+    else
+      echo "ERROR: water authoring did not reach save — aborting before cook. Tail:"
+      $DOCKER exec "$CONTAINER" bash -lc 'tail -30 /tmp/water-author.log' || true
+      exit 1
+    fi
+  elif [[ "${CENTER_START:-1}" != "0" ]]; then
+    # Imported packs spawn the pawn at the map edge / origin. Re-centre the
+    # PlayerStart on the terrain so the streamed view starts mid-map. Opt out with
+    # CENTER_START=0. Pass MAP into the container (docker exec doesn't inherit it).
     echo "[2c/3] Centering PlayerStart on $MAP (center_player_start.py, -nullrhi) ..."
     $DOCKER exec -i -e MAP="$MAP" --workdir / "$CONTAINER" \
       "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
