@@ -16,4 +16,6 @@ class YELLOWWORLD_API AFlyGameMode : public AGameModeBase
 
 public:
 	AFlyGameMode();
+
+	virtual void BeginPlay() override;
 };

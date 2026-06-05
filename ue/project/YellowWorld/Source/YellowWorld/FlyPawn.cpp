@@ -9,6 +9,59 @@ AFlyPawn::AFlyPawn()
 	// ADefaultPawn's constructor created the UFloatingPawnMovement; retune it for
 	// a large world. High accel/decel keeps it responsive at these speeds.
 	ApplySpeed(CruiseSpeed);
+
+	// Needed for the follow-camera chase logic.
+	PrimaryActorTick.bCanEverTick = true;
+}
+
+void AFlyPawn::SetFollowTarget(AActor* Target)
+{
+	FollowTarget = Target;
+	bHaveFollowPrev = false;
+}
+
+void AFlyPawn::ClearFollowTarget()
+{
+	FollowTarget = nullptr;
+	bHaveFollowPrev = false;
+}
+
+void AFlyPawn::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	AActor* T = FollowTarget.Get();
+	if (!T)
+	{
+		return;
+	}
+
+	// Derive the target's travel direction from its motion (the creature is a
+	// kinematic mover, so GetVelocity can be 0); fall back to the last heading.
+	const FVector Tl = T->GetActorLocation();
+	if (bHaveFollowPrev)
+	{
+		FVector Delta = Tl - FollowPrevTargetLoc;
+		Delta.Z = 0.f;
+		if (Delta.SizeSquared() > 1.f)
+		{
+			FollowDir = Delta.GetSafeNormal();
+		}
+	}
+	FollowPrevTargetLoc = Tl;
+	bHaveFollowPrev = true;
+
+	const FVector DesiredPos = Tl - FollowDir * FollowDistance + FVector(0.f, 0.f, FollowHeight);
+	const FVector NewPos = FMath::VInterpTo(GetActorLocation(), DesiredPos, DeltaSeconds, FollowLag);
+	SetActorLocation(NewPos);
+
+	// DefaultPawn frames from the controller's control rotation; point it at the
+	// target (slightly above the root so we look at the body, not the feet).
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		const FRotator DesiredRot = (Tl + FVector(0.f, 0.f, 250.f) - NewPos).Rotation();
+		PC->SetControlRotation(FMath::RInterpTo(PC->GetControlRotation(), DesiredRot, DeltaSeconds, FollowLag * 1.5f));
+	}
 }
 
 void AFlyPawn::ApplySpeed(float Speed)

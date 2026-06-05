@@ -5,7 +5,21 @@
 #include "CreatureDef.h"
 #include "SceneCreature.generated.h"
 
+class UCapsuleComponent;
 class USkeletalMeshComponent;
+class ACreatureDirector;
+
+/** What the autonomy (utility) layer is currently doing when no explicit order
+ *  is active. Explicit director commands suspend autonomy (see bExplicitOrder). */
+UENUM()
+enum class EAutoAction : uint8
+{
+	None,
+	Graze,
+	SeekWater,
+	Drinking,
+	Resting,
+};
 
 /**
  * ASceneCreature is the generic, kinematic "living thing" the brain drives. It
@@ -30,6 +44,10 @@ class YELLOWWORLD_API ASceneCreature : public AActor
 
 public:
 	ASceneCreature();
+
+	/** Root capsule — blocks other creatures while the mesh stays visual-only. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Creature")
+	TObjectPtr<UCapsuleComponent> Capsule;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Creature")
 	TObjectPtr<USkeletalMeshComponent> Mesh;
@@ -59,8 +77,57 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Creature")
 	bool bAtWater = false;
 
+	// --- Drives (minimal ecosystem substrate) ---------------------------------
+	// 0 (sated/rested) .. 1 (desperate/exhausted). Seeded by the brain at spawn
+	// (e.g. "they walked far" -> high thirst) and then evolve every tick. The
+	// utility layer below reads them to choose autonomous actions.
+	UPROPERTY(BlueprintReadOnly, Category = "Creature|Drives")
+	float Thirst = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Creature|Drives")
+	float Fatigue = 0.f;
+
+	/** When true, the creature acts on its own drives whenever it has no explicit
+	 *  order in progress. Set false for a fully hand-scripted scene. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	bool bAutonomous = true;
+
+	// Per-second drive evolution + utility thresholds (tunable, sane defaults).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float ThirstRisePerSec = 0.008f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float ThirstMoveBonusPerSec = 0.010f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float ThirstDrinkDropPerSec = 0.220f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float FatigueWalkRisePerSec = 0.010f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float FatigueRunRisePerSec = 0.028f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float FatigueRestDropPerSec = 0.045f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float ThirstSeekThreshold = 0.60f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float ThirstSatedThreshold = 0.12f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float FatigueRestThreshold = 0.80f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Creature|Drives")
+	float FatigueRestedThreshold = 0.20f;
+
+	/** Set one drive ("thirst"/"fatigue") to a 0..1 value (brain seeds these). */
+	void SetDrive(FName Drive, float Value);
+
+	/** Lake centre (XY) + surface Z + planar radius (cm). Thirsty creatures path
+	 *  to the nearest rim point on the circle, and only halt at the shoreline when
+	 *  they are within that radius — not at random cliffs elsewhere on the map. */
+	void SetWaterSource(const FVector& Location, float Radius);
+
 	/** Apply a catalog row (mesh, anim set, speeds, scale). Safe if soft refs are unset. */
 	void ApplyDef(const FCreatureDef& Def);
+
+	/** The director that spawned us, used to report world events for the push
+	 *  event channel (DrainEvents). Weak so it never keeps the director alive. */
+	void SetOwnerDirector(ACreatureDirector* InDirector);
 
 	// --- behaviour API, driven by ACreatureDirector verbs ---------------------
 	void MoveTo(const FVector& World, float Speed);
@@ -109,10 +176,46 @@ protected:
 	bool bAvoidWater = false;
 	float WaterZ = 0.f;
 	float WaterEdgeMargin = 80.f;
+	/** Planar radius of the water body (cm). Matches the lake spline radius. */
+	float WaterSourceRadius = 26000.f;
+	/** Extra planar slack beyond the radius where a shoreline halt is allowed. */
+	float ShoreStopSlack = 3500.f;
+
+	// --- autonomy / drives state ----------------------------------------------
+	// An explicit director order (MoveTo/SetPath/SetLeader/Wander/action state)
+	// suspends autonomy until the order completes (creature goes idle). The
+	// autonomy layer only fills the idle gaps, so a directed scene wins.
+	bool bExplicitOrder = false;
+	EAutoAction AutoAction = EAutoAction::None;
+	float ActionTimer = 0.f;
+
+	bool bHaveWaterSource = false;
+	FVector WaterSource = FVector::ZeroVector;
+
+	bool bHaveHome = false;
+	FVector HomeLoc = FVector::ZeroVector;
+	float GrazeRadius = 2500.f;
+
+	// Edge-trigger memory so we only enqueue an event when a flag flips.
+	bool bWasThirsty = false;
+	bool bWasTired = false;
+
+	TWeakObjectPtr<ACreatureDirector> OwnerDirector;
+
+	void EvolveDrives(float Dt);
+	void UpdateAutonomy(float Dt);
+	void ChooseAutonomousAction();
+	bool HasActiveGoal() const;
+	void ReportEvent(const FString& Event);
 
 	void OnReachedGoal();
 	void SetLocomotionState(FName State);
 	FVector PickWanderTarget() const;
 	float GroundZ(float X, float Y, float FallbackZ) const;
 	void FaceDirection(const FVector& Dir, float Dt);
+	/** Nearest drink point on the lake rim toward this creature. */
+	FVector ComputeShoreDrinkPoint() const;
+	bool TryMoveTo(const FVector& NewLoc);
+	/** Planar push-out so overlapping creatures cannot pass through each other. */
+	void ResolveCreatureOverlaps();
 };

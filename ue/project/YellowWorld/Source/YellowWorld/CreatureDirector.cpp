@@ -1,11 +1,14 @@
 #include "CreatureDirector.h"
 
 #include "SceneCreature.h"
+#include "FlyPawn.h"
 #include "CreatureDef.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "CollisionQueryParams.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameFramework/PlayerController.h"
 
 namespace
 {
@@ -28,9 +31,11 @@ namespace
 		return FString::Printf(
 			TEXT("{\"id\":\"%s\",\"type\":\"%s\",\"state\":\"%s\",")
 			TEXT("\"x\":%.1f,\"y\":%.1f,\"z\":%.1f,\"speed\":%.1f,")
+			TEXT("\"thirst\":%.3f,\"fatigue\":%.3f,")
 			TEXT("\"arrived\":%s,\"atWater\":%s}"),
 			*Id, *C->CreatureType.ToString(), *C->CurrentState.ToString(),
 			L.X, L.Y, L.Z, C->CurrentSpeed,
+			C->Thirst, C->Fatigue,
 			C->bArrived ? TEXT("true") : TEXT("false"),
 			C->bAtWater ? TEXT("true") : TEXT("false"));
 	}
@@ -143,6 +148,7 @@ void ACreatureDirector::SpawnCreature(const FString& Type, const FString& Id, fl
 
 	Creature->CreatureId = IdName;
 	Creature->CreatureType = FName(*Type);
+	Creature->SetOwnerDirector(this);
 
 	const FCreatureDef* Def = ResolveDef(FName(*Type));
 	if (Def)
@@ -152,6 +158,10 @@ void ACreatureDirector::SpawnCreature(const FString& Type, const FString& Id, fl
 	if (bHaveWaterZ)
 	{
 		Creature->SetWaterLevel(SceneWaterZ);
+	}
+	if (bHaveWaterSource)
+	{
+		Creature->SetWaterSource(SceneWaterSource, SceneWaterRadius);
 	}
 
 	Creatures.Add(IdName, Creature);
@@ -346,4 +356,146 @@ void ACreatureDirector::SetWaterLevel(float SurfaceZ)
 		}
 	}
 	Notify(FString::Printf(TEXT("SetWaterLevel %.0f applied to %d creature(s)"), SurfaceZ, N));
+}
+
+void ACreatureDirector::SetWaterSource(float X, float Y, float SurfaceZ, float Radius)
+{
+	bHaveWaterSource = true;
+	SceneWaterSource = FVector(X, Y, SurfaceZ);
+	SceneWaterRadius = FMath::Max(Radius, 100.f);
+	// SurfaceZ also drives the shoreline stop, so keep the level path in sync.
+	bHaveWaterZ = true;
+	SceneWaterZ = SurfaceZ;
+	int32 N = 0;
+	for (const TPair<FName, TObjectPtr<ASceneCreature>>& Pair : Creatures)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->SetWaterSource(SceneWaterSource, SceneWaterRadius);
+			++N;
+		}
+	}
+	Notify(FString::Printf(TEXT("SetWaterSource (%.0f,%.0f,%.0f) r=%.0f applied to %d creature(s)"),
+		X, Y, SurfaceZ, SceneWaterRadius, N));
+}
+
+void ACreatureDirector::SetCreatureDrive(const FString& Id, const FString& Drive, float Value)
+{
+	if (ASceneCreature* C = Find(Id))
+	{
+		C->SetDrive(FName(*Drive), Value);
+		Notify(FString::Printf(TEXT("SetCreatureDrive '%s' %s=%.2f"), *Id, *Drive, Value));
+	}
+	else
+	{
+		Notify(FString::Printf(TEXT("SetCreatureDrive: no creature '%s'"), *Id));
+	}
+}
+
+void ACreatureDirector::SetCreatureAutonomy(const FString& Id, bool bEnabled)
+{
+	if (ASceneCreature* C = Find(Id))
+	{
+		C->bAutonomous = bEnabled;
+		Notify(FString::Printf(TEXT("SetCreatureAutonomy '%s' = %s"), *Id, bEnabled ? TEXT("on") : TEXT("off")));
+	}
+	else
+	{
+		Notify(FString::Printf(TEXT("SetCreatureAutonomy: no creature '%s'"), *Id));
+	}
+}
+
+void ACreatureDirector::ReportEvent(const FString& Id, const FString& Event)
+{
+	if (EventQueue.Num() >= MaxEvents)
+	{
+		EventQueue.RemoveAt(0); // drop oldest; a non-draining consumer can't OOM us
+	}
+	EventQueue.Add(FString::Printf(TEXT("{\"id\":\"%s\",\"event\":\"%s\"}"), *Id, *Event));
+}
+
+FString ACreatureDirector::DrainEvents()
+{
+	FString Out = TEXT("[");
+	for (int32 i = 0; i < EventQueue.Num(); ++i)
+	{
+		if (i > 0)
+		{
+			Out += TEXT(",");
+		}
+		Out += EventQueue[i];
+	}
+	Out += TEXT("]");
+	EventQueue.Reset();
+	return Out;
+}
+
+void ACreatureDirector::FocusCamera(const FString& Id)
+{
+	ASceneCreature* C = Find(Id);
+	if (!C)
+	{
+		Notify(FString::Printf(TEXT("FocusCamera: no creature '%s'"), *Id));
+		return;
+	}
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	AFlyPawn* Pawn = PC ? Cast<AFlyPawn>(PC->GetPawn()) : nullptr;
+	if (!Pawn)
+	{
+		Notify(TEXT("FocusCamera: no AFlyPawn possessed"));
+		return;
+	}
+	Pawn->SetFollowTarget(C);
+	Notify(FString::Printf(TEXT("FocusCamera -> '%s'"), *Id));
+}
+
+void ACreatureDirector::StopFocus()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	AFlyPawn* Pawn = PC ? Cast<AFlyPawn>(PC->GetPawn()) : nullptr;
+	if (Pawn)
+	{
+		Pawn->ClearFollowTarget();
+		Notify(TEXT("StopFocus (free-fly restored)"));
+	}
+}
+
+void ACreatureDirector::FocusHerdOverview()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	AFlyPawn* Pawn = PC ? Cast<AFlyPawn>(PC->GetPawn()) : nullptr;
+	if (!Pawn)
+	{
+		Notify(TEXT("FocusHerdOverview: no AFlyPawn possessed"));
+		return;
+	}
+
+	Pawn->ClearFollowTarget();
+
+	FVector Centroid = FVector::ZeroVector;
+	int32 N = 0;
+	for (const TPair<FName, TObjectPtr<ASceneCreature>>& Kv : Creatures)
+	{
+		if (ASceneCreature* C = Kv.Value.Get())
+		{
+			Centroid += C->GetActorLocation();
+			++N;
+		}
+	}
+	if (N == 0)
+	{
+		Notify(TEXT("FocusHerdOverview: no creatures"));
+		return;
+	}
+	Centroid /= static_cast<float>(N);
+
+	// South-east of the herd, elevated — frames the group without chase-cam jitter.
+	const FVector CamLoc = Centroid + FVector(2200.f, -1600.f, 2400.f);
+	Pawn->SetActorLocation(CamLoc);
+	if (PC)
+	{
+		const FVector LookAt = Centroid + FVector(0.f, 0.f, 200.f);
+		PC->SetControlRotation((LookAt - CamLoc).Rotation());
+	}
+	Notify(FString::Printf(TEXT("FocusHerdOverview (%d creatures)"), N));
 }

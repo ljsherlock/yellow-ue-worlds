@@ -12,6 +12,11 @@ PACKAGED="${PACKAGED:-$PROJECT_DIR/Packaged/Linux}"
 INFRA_DIR="${INFRA_DIR:-$HOME/PixelStreamingInfrastructure}"
 INFRA_BRANCH="${INFRA_BRANCH:-UE5.7}"
 RC="${RC:-0}"   # 1 => enable Remote Control (Spike 1b)
+# DEMO (default 1): once the app + RC are up, auto-spawn the demo elephant herd
+# (ue/run/demo_herd.sh) so a fresh load opens on a living scene. Needs RC, so we
+# force it on. Set DEMO=0 to boot to an empty savanna.
+DEMO="${DEMO:-1}"
+if [[ "$DEMO" == "1" ]]; then RC=1; fi
 # STREAM_MAP (optional): open this map instead of the packaged GameDefaultMap.
 # Passed as the first positional arg to the launcher. Defaults to the savanna
 # landscape because that is what we cook/package; the old spike map is no longer
@@ -86,7 +91,33 @@ fi
 echo
 echo ">>> Once it's running, open:  http://${PUBLIC_IP:-<VM_PUBLIC_IP>}"
 echo
-exec "$APP_SH" ${MAP_ARG[@]+"${MAP_ARG[@]}"} -RenderOffscreen -AudioMixer -Unattended \
+
+# Launch the app in the background (not exec) so we can fire the demo herd once
+# its Remote Control server is accepting calls, then wait on it.
+"$APP_SH" ${MAP_ARG[@]+"${MAP_ARG[@]}"} -RenderOffscreen -AudioMixer -Unattended \
   -PixelStreamingSignallingURL=ws://127.0.0.1:8888 \
   ${RC_FLAGS[@]+"${RC_FLAGS[@]}"} \
-  ${EXEC_ARG[@]+"${EXEC_ARG[@]}"}
+  ${EXEC_ARG[@]+"${EXEC_ARG[@]}"} &
+APP_PID=$!
+
+if [[ "$DEMO" == "1" ]]; then
+  (
+    DEMO_SCRIPT="${DEMO_SCRIPT:-$HOME/ue/run/demo_herd.sh}"
+    # Poll the RC web server until it accepts HTTP (app fully booted + map open).
+    for _ in $(seq 1 150); do
+      if curl -s -m 2 -o /dev/null "http://127.0.0.1:30010/remote/info" 2>/dev/null; then
+        break
+      fi
+      sleep 2
+    done
+    sleep 4   # let the level + CreatureDirector finish BeginPlay
+    if [[ -f "$DEMO_SCRIPT" ]]; then
+      echo "[demo] spawning herd via $DEMO_SCRIPT"
+      bash "$DEMO_SCRIPT" || echo "[demo] herd script failed"
+    else
+      echo "[demo] $DEMO_SCRIPT not found — skipping"
+    fi
+  ) &
+fi
+
+wait "$APP_PID"

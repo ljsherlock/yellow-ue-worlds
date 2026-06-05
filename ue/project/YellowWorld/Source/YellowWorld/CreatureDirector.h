@@ -98,6 +98,45 @@ public:
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
 	FString QueryCreature(const FString& Id);
 
+	/** Seed/override a drive ("thirst"/"fatigue") to a 0..1 value. The brain calls
+	 *  this at spawn so the prompt sets initial motivation (e.g. "they walked far"
+	 *  -> high thirst), then the creature's utility layer acts on it. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	void SetCreatureDrive(const FString& Id, const FString& Drive, float Value);
+
+	/** Enable/disable a creature's autonomous (drive-driven) behaviour. Off = the
+	 *  scene is fully hand-directed; on (default) = drives fill idle gaps. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	void SetCreatureAutonomy(const FString& Id, bool bEnabled);
+
+	/** Where the herd drinks: lake centre (XY), surface Z, and planar radius (cm).
+	 *  Thirsty creatures path to the nearest rim point and only halt at the
+	 *  shoreline when within that radius. Applies to all live + future creatures. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	void SetWaterSource(float X, float Y, float SurfaceZ, float Radius);
+
+	/** Pop-and-clear the buffered world events as a JSON array
+	 *  ([{"id","event"},...]). This is the push event channel the slow LLM loop
+	 *  drains instead of re-polling full state every tick. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	FString DrainEvents();
+
+	/** Point the streamed camera at a creature and trail it. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	void FocusCamera(const FString& Id);
+
+	/** Release the camera back to free-fly. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	void StopFocus();
+
+	/** Park the streamed camera above the herd centroid (no follow-cam). */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	void FocusHerdOverview();
+
+	/** Append a world event to the drain queue (called by ASceneCreature). Not a
+	 *  remote verb — internal plumbing for DrainEvents. */
+	void ReportEvent(const FString& Id, const FString& Event);
+
 	/**
 	 * Tell every creature the surface height (cm) of the water they're heading
 	 * for so they stop at the shoreline instead of walking down the (collision-
@@ -114,6 +153,16 @@ private:
 	/** Last SetWaterLevel value, re-applied to creatures spawned later. */
 	bool bHaveWaterZ = false;
 	float SceneWaterZ = 0.f;
+
+	/** Last SetWaterSource (centre + surface Z + radius), re-applied on spawns. */
+	bool bHaveWaterSource = false;
+	FVector SceneWaterSource = FVector::ZeroVector;
+	float SceneWaterRadius = 26000.f;
+
+	/** Buffered world events, drained over RC by DrainEvents(). Capped so a brain
+	 *  that never drains can't grow it without bound. */
+	TArray<FString> EventQueue;
+	static constexpr int32 MaxEvents = 256;
 
 	/** Types registered at runtime via DefineCreatureType (checked before CreatureTable). */
 	UPROPERTY() TMap<FName, FCreatureDef> DefinedTypes;

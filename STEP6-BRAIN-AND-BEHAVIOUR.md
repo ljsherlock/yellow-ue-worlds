@@ -10,9 +10,12 @@ brain to the live creature system and the ecosystem that follows._
 |---|---|---|
 | 6.1 WorldAPI contract (creature verbs) | ✅ done | verbs + runner-only `Wait`/`WaitForArrival` in `contract.ts`, mock + codegen |
 | 6.2 rc-bridge mapping → CreatureDirector | ✅ done* | registry in `creatures.ts`; path via constant + `RC_CREATURE_PATH`/`--creature-path` override (not yet a stable in-map tag) |
-| 6.3 Read-back / perception | ✅ done | `QueryCreature(s)` RC verbs return live JSON; `arrived`/`atWater` flags on `ASceneCreature`; bridge `perception.ts` + `query` CLI; `WaitForArrival` polls until arrived. **Verified live.** |
+| 6.3 Read-back / perception | ✅ done | `QueryCreature(s)` RC verbs return live JSON (`thirst`/`fatigue` included); `arrived`/`atWater`; bridge `perception.ts` + `drainEventLoop`; `WaitForArrival` polls until arrived. **Verified live.** |
 | 6.4 LangGraph: NL → live scene | ✅ fake / ⚠ Gemini | `plan.py` + `scene.sh` + `runPlan`; proven end-to-end with the FakeProvider. Gemini path no longer trips 6.5 (sky fixed); Gemini still needs a real-key smoke test |
 | 6.5 Reconcile (sky/time, SceneSpec) | ✅ done | `WorldDirector` baked into the savanna map (`add_worlddirector.py` + `ADD_WORLDDIRECTOR` build flag); mapping fixed (`SetSkyState`→`SetWeatherPreset`, `AdvanceTime`→`SetTimeOfDay`); runner `--keep-going`. **`sunset` verified live on savanna.** `SceneSpec`↔verbs still to reconcile (next installment) |
+| 6.6 Minimal drives substrate (brought forward) | ✅ done | `ASceneCreature` thirst/fatigue evolve + thin utility layer (graze → seek water → drink → rest); `SetCreatureDrive` seeds from prompt/brain; director orders suspend autonomy. **Verified live** on streamed savanna. |
+| 6.7 Event channel + observability UI | ✅ done | `DrainEvents` RC verb + `rc-bridge` `drainEventLoop`; `FocusCamera`/`StopFocus`/`FocusHerdOverview`; custom PS2 frontend (drives panel, default UI hidden); `AStreamBridge` pushes `QueryCreatures` ~2 Hz. |
+| 6.8 Demo mode | ✅ done | `demo_herd.sh` (20 adults + 3 calves) + `run-stream.sh` `DEMO=1` default; follow-cam on `a01` at boot. Shoreline/collision fixes + west-bank home in cook (2026-06-05). |
 
 End-to-end **is live**: `scene.sh "…sunset…drinks"` → brain plan → `rc-bridge run`
 → herd spawns, migrates, and drinks **on perceived arrival** (`WaitForArrival`),
@@ -21,17 +24,22 @@ tunnel to the VM, as decided.
 
 **Findings since planning (feed the behaviour tier):**
 
-- **Ground trace hits the water surface.** `GroundZ` (WorldStatic line trace)
-  returns the lake's collision plane (`-6000`) over the wetted area, so the
-  shoreline-stop fires at the *true* near shore — not a lakebed walk-in. lake2 is
-  huge (~1.7 km across), so the herd halts ~865 m from centre on the near bank;
-  it reads as "stopping short". `herd_start` moved to the midpoint of the
-  approach for a shorter, reliable walk-in (data-only, `creatures.ts`).
-- **The camera is fully drivable over RC** (no new verb yet): `GetPlayerPawn`
-  → set `MaxSpeed`/`CruiseSpeed`; `PlayerController` look scale. Proves read-back
-  + actuation of arbitrary actors is feasible over plain RC — useful for 6.3 and
-  observability. Sane fly-cam defaults (40 m/s cruise, 400 turbo, half mouse-look)
-  are now **baked into the build**.
+- **Shoreline stop must be lake-gated, not Z-only.** A global
+  `groundZ <= waterZ` halt fires on *any* terrain below the waterline — including
+  cliffs 1+ km from lake2. Fix: `SetWaterSource(X,Y,Z,Radius)` + path to the
+  **nearest rim point** (not lake centre) + only `atWater` when planar distance
+  to the lake centre is within the spline radius. Demo home moved to dry ground
+  just west of the visible bank (`445000,626000`).
+- **PlayerStart ≠ herd.** `add_water_lake.py` places the stream spawn over the
+  lake centre; the demo herd grazes hundreds of metres away. **Follow-cam**
+  (`FocusCamera`) at demo boot is required for a sensible first frame; free-fly
+  starts over empty water unless the user flies to the herd.
+- **NL prompts today = shell only.** `scripts/scene.sh "<prompt>"` (brain →
+  rc-bridge → RC). The PS2 overlay is receive-only (drives panel). A prompt box
+  in the stream UI needs a thin HTTP wrapper around `scene.sh` — not engine work.
+- **Sane fly-cam defaults** (40 m/s cruise, 400 turbo, half mouse-look) are
+  **baked into the build**; `FocusCamera` / `FocusHerdOverview` / `StopFocus`
+  are first-class RC verbs on `CreatureDirector`.
 
 ## Context
 
@@ -54,8 +62,10 @@ the creature verbs existed — so this is mostly **extend + reconcile**, not gre
 
 ## NOW — Step 6: Brain integration (verbs out **+** state in)
 
-6.1 + 6.2 + 6.3 + 6.4 + 6.5 landed; only the Gemini real-key smoke test and the
-`SceneSpec`↔verb reconcile remain (next installment).
+6.1–6.5 + the **minimal drives substrate** (6.6), **event/UI/demo** slice (6.7–6.8)
+landed. Next: Gemini real-key smoke test, `SceneSpec`↔verb reconcile, full
+ecosystem expansion (remaining drives/reflexes/relationships), stream UI prompt
+box, cook/stream map guard (infra fix below).
 
 - [x] **6.1 WorldAPI contract** — creature verbs added (`spawn_creature`,
   `move_creature_to`/`follow_path`, `set_creature_state`, `set_creature_leader`,
@@ -89,38 +99,88 @@ the creature verbs existed — so this is mostly **extend + reconcile**, not gre
 
 ---
 
+## Active infra fix (happened twice — 2026-06-05)
+
+**Cook/stream map mismatch** — running `build-in-container.sh` on the VM *without*
+`MAP=…` packages **`/Game/Maps/Spike`** (the script default) while `run-stream.sh`
+opens **`Landscape_1`** (its default). Symptom: stream segfaults on boot with
+`Failed to load package … Landscape_1`; the pak is tiny (~10 MB) and the savanna
+is missing. Easy to trigger when kicking off a cook from tmux/SSH and forgetting
+`YELLOW_MAP` / `MAP=… SKIP_MAKE_MAP=1`.
+
+- [ ] **Permanent fix (do not skip):**
+  1. **Align defaults** — `build-in-container.sh` default `MAP` must match
+     `run-stream.sh` `STREAM_MAP` (savanna `Landscape_1`), or the build must
+     **fail fast** if they diverge.
+  2. **Guard in `build-in-container.sh`** — before cook: echo resolved `MAP`, and
+     abort (or require `FORCE_SPIKE=1`) when `MAP` is Spike but
+     `STREAM_MAP`/`YELLOW_MAP` env points at the savanna.
+  3. **Guard in `vm.sh` / npm scripts** — `ue:build` always threads
+     `YELLOW_MAP` → remote `MAP` + `SKIP_MAKE_MAP=1` (already there; document
+     that bare SSH cooks are unsafe).
+  4. **Post-cook verify** — script step that asserts the pak contains
+     `Landscape_1` (or `UnrealPak -List` grep) before declaring success.
+  5. **Runbook note** — never `bash ~/ue/build/build-in-container.sh` on the VM
+     without `MAP=/Game/8KSavannahLandscapePack/Scenes/Landscapes/Landscape_1
+     SKIP_MAKE_MAP=1` (or `npm run ue:build` with `YELLOW_MAP` set).
+
+Until this lands, **every manual cook on the VM needs the savannah `MAP` env** or
+the stream will look fine in logs but crash when a browser connects.
+
+---
+
 ## Prerequisites before the ecosystem (easy to miss)
 
 - [x] **Read-back loop (6.3)** — **done.** `QueryCreature(s)` + `WaitForArrival`
   give the LLM/sim live state to act on.
 - [x] **Entity addressing** — id ↔ actor in the `CreatureDirector` registry now
   **exposed back** via `QueryCreature(Id)` for perception.
-- [ ] **Event/tick channel** — so the slow LLM loop is triggered by world events,
-  not polling. **Still open** (`WaitForArrival` polls; a push channel is the upgrade).
-- [~] **Observability** — the camera is now drivable over RC and has sane baked
-  defaults (free-cam usable), but a first-class **snap-to / follow-creature** verb
-  (and screenshot) is still missing.
+- [x] **Event/tick channel** — **done (substrate).** `CreatureDirector::DrainEvents`
+  buffers transitions (`arrived`/`atWater`/`thirsty`/`tired`/`seek_water`/…);
+  `rc-bridge` `drainEventLoop` is the brain-side seam. `WaitForArrival` still polls
+  for scripted plans; the slow LLM loop should **drain + react** next.
+- [x] **Observability** — **done (camera).** `FocusCamera(Id)` follow-cam,
+  `FocusHerdOverview` wide static shot, `StopFocus` free-fly. Screenshot verb still
+  open.
 - [x] **World clock** — `AdvanceTime`/`SetTimeOfDay` already exist.
 
 ---
 
-## NEXT INSTALLMENT — minimal Drives/Primitives ecosystem (NOT now)
+## NEXT INSTALLMENT — Drives/Primitives ecosystem (partially started 2026-06-05)
 
 Zoology-grounded. Start minimal; expansion = LLM data, **no engine code**.
 Architecture = drive/utility **core** + thin **reflex** layer (mirrors ethology:
 slow motivation + fast reflex), with the **LLM authoring all the content**.
 
-- [ ] **Fast tier** (UE, per-tick) on `ASceneCreature`: a small **drive vector**
-  — hunger, thirst, fear, fatigue, social — + **utility action-selection** over
-  existing actions (seek / flee / drink / graze / idle / wander).
-- [ ] **Reflex layer** — a thin set of threshold triggers (e.g. flight-initiation
-  distance) for genuinely binary responses.
+**Brought forward early** (so the stream demo and drives panel show real behaviour):
+
+- [x] **Fast tier (minimal)** — `ASceneCreature` **thirst + fatigue** evolve per
+  tick; utility layer chooses graze / seek water / drink / rest when idle;
+  `SetCreatureDrive` + `SetCreatureAutonomy` RC verbs; `bExplicitOrder` suspends
+  autonomy for director/brain choreography. Query JSON includes `thirst`/`fatigue`.
+- [x] **Stream observability** — custom PS2 frontend (`player.html`/`player.ts`):
+  default UI hidden, top-right drives panel fed by `AStreamBridge` +
+  `SendPixelStreaming2Response`. Deploy via `deploy_frontend.sh`.
+- [x] **Demo mode** — `demo_herd.sh` + `run-stream.sh` `DEMO=1`; seeds drives from
+  the scene (staggered thirst → procession to water); follow-cam on `a01`.
+- [x] **Creature collision** — capsule root + `ResolveCreatureOverlaps()` planar
+  depenetration each tick (kinematic pawn sweeps miss same-frame); half-step jam
+  retreat in `TryMoveTo`. **Needs cook** after C++ change (2026-06-05).
+
+**Still open** (original full ecosystem scope):
+
+- [ ] **Fast tier (full)** — extend drive vector to hunger, fear, social (~5 drives);
+  more actions (flee, stalk, herd-with, …).
+- [ ] **Reflex layer** — threshold triggers (e.g. flight-initiation distance) for
+  genuinely binary responses.
 - [ ] **Relationships as data** — predator/prey/herd (`stalks` / `flees-from` /
   `herds-with`); vocabulary already in `SceneSpec`.
 - [ ] **LLM authors the content** — per-species drives, relationships, parameters,
-  reflexes set via verbs; LLM **re-tunes** via the slow director loop.
-- [ ] **Start scope** — ~5 drives, ~8 actions, 3 relationships, 2 species
-  (elephant + lion). Expand from there.
+  reflexes set via verbs; LLM **re-tunes** via the slow director loop (`DrainEvents`).
+- [ ] **Stream UI prompt box** — thin HTTP API wrapping `scene.sh` / `brain.plan` +
+  `rc-bridge run` (shell works today; browser needs a backend).
+- [ ] **Start scope (remainder)** — lion + relationships; expand from the two-drive
+  elephant substrate.
 
 ### Why this shape (decided 2026-06-04)
 

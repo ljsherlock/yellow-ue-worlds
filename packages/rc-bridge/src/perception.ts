@@ -1,3 +1,4 @@
+import type { RCBridge } from "./client.js";
 import type { RCFunctionCall } from "./contract.js";
 import { CREATURE_DIRECTOR_PATH } from "./creatures.js";
 
@@ -92,5 +93,94 @@ export function parseCreatures(returnValue: unknown): CreatureState[] {
     return Array.isArray(arr) ? (arr as CreatureState[]) : [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * Event channel (the UE→brain push half of installment 6.3): rather than the
+ * brain polling each creature's full state, the CreatureDirector buffers
+ * discrete transitions (arrived / atWater / thirsty / tired) and hands them over
+ * in one shot via DrainEvents, clearing its queue. This is the seam a slow LLM
+ * loop reads from: drain, react, drain again — no per-creature QueryCreature
+ * storm, and nothing is missed between reads.
+ */
+export interface CreatureEvent {
+  id: string;
+  /** e.g. "arrived" | "atWater" | "thirsty" | "tired". */
+  event: string;
+}
+
+/** RC call that returns buffered creature events as a JSON array and clears the queue. */
+export function drainEventsCall(
+  creaturePath: string = CREATURE_DIRECTOR_PATH,
+): RCFunctionCall {
+  return {
+    objectPath: creaturePath,
+    functionName: "DrainEvents",
+    parameters: {},
+    // Draining mutates the queue, but it's a read-and-clear, not a world edit —
+    // no undo transaction (matches the other perception reads).
+    generateTransaction: false,
+  };
+}
+
+/** Parse a DrainEvents response into an array (empty if absent/unparseable). */
+export function parseEvents(returnValue: unknown): CreatureEvent[] {
+  const s = extractReturnString(returnValue);
+  if (!s) {
+    return [];
+  }
+  try {
+    const arr = JSON.parse(s);
+    if (!Array.isArray(arr)) {
+      return [];
+    }
+    return (arr as Partial<CreatureEvent>[]).filter(
+      (e): e is CreatureEvent =>
+        !!e && typeof e.id === "string" && typeof e.event === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+export interface DrainEventLoopOptions {
+  paths?: { creatureDirector?: string };
+  /** How often to drain, ms. Default 1000. */
+  pollMs?: number;
+  /** Injectable sleep (tests pass a controllable one); defaults to setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Stop the loop. When this returns true the loop exits after the next drain. */
+  stop?: () => boolean;
+}
+
+/**
+ * Poll DrainEvents on an interval and invoke `onEvents` with each non-empty
+ * batch. Returns when `stop()` reports true (or never, if no stop is given —
+ * callers typically race it against an AbortController-style flag). Designed as
+ * the brain's perception pump: keep it draining while the LLM deliberates so
+ * events accumulate in UE and arrive in order on the next tick.
+ */
+export async function drainEventLoop(
+  bridge: RCBridge,
+  onEvents: (events: CreatureEvent[]) => void | Promise<void>,
+  options: DrainEventLoopOptions = {},
+): Promise<void> {
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const pollMs = options.pollMs ?? 1000;
+  const creaturePath = options.paths?.creatureDirector ?? CREATURE_DIRECTOR_PATH;
+  const call = drainEventsCall(creaturePath);
+
+  for (;;) {
+    const res = await bridge.callFunction(call);
+    const events = parseEvents(res.returnValue);
+    if (events.length > 0) {
+      await onEvents(events);
+    }
+    if (options.stop?.()) {
+      return;
+    }
+    await sleep(pollMs);
   }
 }

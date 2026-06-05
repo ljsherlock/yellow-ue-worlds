@@ -22,6 +22,23 @@ public:
 	AFlyPawn();
 
 	virtual void SetupPlayerInputComponent(UInputComponent* InInputComponent) override;
+	virtual void Tick(float DeltaSeconds) override;
+
+	/** Trail and frame the given actor (the streamed view follows a creature).
+	 *  Pass nullptr (or call ClearFollowTarget) to return to free-fly. */
+	void SetFollowTarget(AActor* Target);
+	void ClearFollowTarget();
+
+	/** Chase-cam framing: how far behind / above the target, and how snappily the
+	 *  camera lags toward the ideal pose. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float FollowDistance = 1600.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float FollowHeight = 750.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float FollowLag = 3.f;
 
 	// Possession-safe hooks: SetupPlayerInputComponent can run before the pawn is
 	// possessed (GetController() is null then), so applying the look-scale there
@@ -47,6 +64,11 @@ public:
 	float LookPitchScale = -1.25f;
 
 private:
+	TWeakObjectPtr<AActor> FollowTarget;
+	FVector FollowPrevTargetLoc = FVector::ZeroVector;
+	FVector FollowDir = FVector(1.f, 0.f, 0.f);
+	bool bHaveFollowPrev = false;
+
 	void ApplySpeed(float Speed);
 	/** Push LookYaw/PitchScale onto the owning PlayerController. Safe to call
 	 *  repeatedly; no-ops until a PlayerController possesses this pawn. */

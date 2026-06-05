@@ -11,9 +11,16 @@ export {
 export { runPlan } from "./runner.js";
 export type { RunPlanOptions, RunStep } from "./runner.js";
 export {
+  drainEventLoop,
+  drainEventsCall,
   parseCreature,
   parseCreatures,
+  parseEvents,
   queryCreatureCall,
   queryCreaturesCall,
 } from "./perception.js";
-export type { CreatureState } from "./perception.js";
+export type {
+  CreatureEvent,
+  CreatureState,
+  DrainEventLoopOptions,
+} from "./perception.js";
