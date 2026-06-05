@@ -72,9 +72,20 @@ if [[ -n "$STREAM_MAP" ]]; then
   echo "Opening map: $STREAM_MAP"
 fi
 
+# EXEC_CMDS (optional): comma-separated console commands run once at startup.
+# Lets us tune scalability cvars (e.g. grass.CullDistanceScale to push the
+# grass/tree pop-in distance) WITHOUT a rebuild — just relaunch. e.g.
+#   EXEC_CMDS="grass.CullDistanceScale 10" RC=1 ./run-stream.sh
+EXEC_ARG=()
+if [[ -n "${EXEC_CMDS:-}" ]]; then
+  EXEC_ARG=(-ExecCmds="$EXEC_CMDS")
+  echo "ExecCmds: $EXEC_CMDS"
+fi
+
 echo
 echo ">>> Once it's running, open:  http://${PUBLIC_IP:-<VM_PUBLIC_IP>}"
 echo
 exec "$APP_SH" ${MAP_ARG[@]+"${MAP_ARG[@]}"} -RenderOffscreen -AudioMixer -Unattended \
   -PixelStreamingSignallingURL=ws://127.0.0.1:8888 \
-  ${RC_FLAGS[@]+"${RC_FLAGS[@]}"}
+  ${RC_FLAGS[@]+"${RC_FLAGS[@]}"} \
+  ${EXEC_ARG[@]+"${EXEC_ARG[@]}"}

@@ -128,6 +128,40 @@ def _match_trees(p: str) -> Optional[tuple[dict, str]]:
     return call, f"Prompt asks to plant trees, so SpawnTrees({count} {species} {growth})."
 
 
+def _match_creatures(p: str) -> Optional[tuple[list[dict], str]]:
+    """Choreograph an elephant herd from a natural-language prompt.
+
+    Mirrors the proven hand-scripted scene (direct_elephant_scene.sh) as an
+    ordered list of INTENT verbs: spawn a matriarch + a trailing calf at the
+    herd_start, migrate to the watering_hole, then drink. `Wait` carries the
+    scripted timing (walk, then drink on arrival) until the read-back loop lets
+    actions fire on world events instead."""
+    if not re.search(r"elephant|herd|matriarch|calf", p):
+        return None
+
+    calls: list[dict] = [
+        {"tool": "SpawnCreature", "args": {"species": "elephant_adult", "id": "matriarch", "at": "herd_start"}},
+        {"tool": "SpawnCreature", "args": {"species": "elephant_baby", "id": "calf", "at": "herd_start"}},
+        {"tool": "SetCreatureLeader", "args": {"id": "calf", "leader_id": "matriarch", "distance_m": 4}},
+    ]
+    migrates = bool(re.search(r"migrat|walk|move|head|march|watering|water|hole|lake|drink", p))
+    if migrates:
+        calls.append({"tool": "MoveCreatureTo", "args": {"id": "matriarch", "to": "watering_hole"}})
+    if re.search(r"drink|water", p):
+        # The migration takes ~75s; drink once the matriarch reaches the shore,
+        # the calf a beat later.
+        calls.append({"tool": "Wait", "args": {"seconds": 75}})
+        calls.append({"tool": "SetCreatureState", "args": {"id": "matriarch", "state": "drink"}})
+        calls.append({"tool": "Wait", "args": {"seconds": 4}})
+        calls.append({"tool": "SetCreatureState", "args": {"id": "calf", "state": "drink"}})
+
+    reason = (
+        "Recognised an elephant herd: spawned a matriarch with a calf trailing ~4 m, "
+        + ("migrated them to the watering_hole and had them drink." if migrates else "ready to direct.")
+    )
+    return calls, reason
+
+
 class FakeProvider:
     name = "fake"
 
@@ -141,6 +175,11 @@ class FakeProvider:
                 call, reason = match
                 tool_calls.append(call)
                 reasons.append(reason)
+        creatures = _match_creatures(p)
+        if creatures:
+            calls, reason = creatures
+            tool_calls.extend(calls)
+            reasons.append(reason)
 
         reasoning = (
             " ".join(reasons)
@@ -364,13 +403,36 @@ def _normalize_tool_call(tc: dict) -> dict:
     elif name == "SpawnTrees":
         args.setdefault("growth_stage", "mature")
         args.setdefault("area", {"center": {"x": 0, "y": 0, "z": 0}, "radius": 10})
+    elif name == "SetCreatureLeader":
+        args.setdefault("distance_m", 4)
+    elif name == "WanderCreature":
+        args.setdefault("radius_m", 15)
     return {"tool": name, "args": args}
 
 
 _SYSTEM_PROMPT = (
-    "You control a real-time 3D world. Translate the user's request into the "
-    "available world-API tool calls. Only call tools that are clearly implied. "
-    "Do not invent parameters."
+    "You direct a real-time 3D savanna. Translate the user's request into an "
+    "ORDERED list of world-API tool calls — you are a scene director, so the "
+    "order matters and you may emit several.\n\n"
+    "Creatures. You speak in INTENT: a species and a named landmark. The engine "
+    "owns the asset details (you never give mesh paths or coordinates).\n"
+    "  species: elephant_adult, elephant_baby\n"
+    "  landmarks: herd_start (a dry rim where a herd gathers), watering_hole "
+    "(the lake shore where animals drink)\n"
+    "  states: idle, walk, run, drink, graze\n\n"
+    "Verbs: SpawnCreature(species, id, at) places a creature and gives it a "
+    "stable id you reuse later; SetCreatureLeader(id, leader_id, distance_m) "
+    "makes one trail another (use ~4 m for a calf behind its mother); "
+    "MoveCreatureTo(id, to) walks it to a landmark (it auto-stops at the "
+    "shoreline); SetCreatureState(id, state) puts it into an action like drink; "
+    "WanderCreature(id, around) for idle roaming; DespawnCreature/ClearCreatures "
+    "to remove. Wait(seconds) pauses the SCRIPT between steps — use it to let a "
+    "migration finish (~75 s to the watering_hole) before you make them drink.\n\n"
+    "A herd migrating to drink looks like: spawn the matriarch (elephant_adult), "
+    "spawn a calf (elephant_baby), make the calf follow the matriarch, move the "
+    "matriarch to the watering_hole, Wait, then set both to drink.\n\n"
+    "You can also set the sky (SetSkyState) and time (AdvanceTime). Only call "
+    "tools the request implies; do not invent parameters."
 )
 
 _GEMINI_TOOLS = [
@@ -410,6 +472,95 @@ _GEMINI_TOOLS = [
                 "growth_stage": {"type": "string", "enum": ["seedling", "sapling", "mature"]},
             },
             "required": ["count", "species"],
+        },
+    },
+    {
+        "name": "SpawnCreature",
+        "description": "Place a creature of a species at a named landmark, with a stable id to address it later.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "species": {"type": "string", "enum": ["elephant_adult", "elephant_baby"]},
+                "id": {"type": "string"},
+                "at": {"type": "string", "enum": ["herd_start", "watering_hole"]},
+                "yaw": {"type": "number"},
+            },
+            "required": ["species", "id", "at"],
+        },
+    },
+    {
+        "name": "MoveCreatureTo",
+        "description": "Walk a creature to a named landmark (it auto-stops at the shoreline).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "to": {"type": "string", "enum": ["herd_start", "watering_hole"]},
+                "speed": {"type": "number"},
+            },
+            "required": ["id", "to"],
+        },
+    },
+    {
+        "name": "SetCreatureState",
+        "description": "Put a creature into a state/action (idle|walk|run|drink|graze).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "state": {"type": "string", "enum": ["idle", "walk", "run", "drink", "graze"]},
+            },
+            "required": ["id", "state"],
+        },
+    },
+    {
+        "name": "SetCreatureLeader",
+        "description": "Make a creature trail another, keeping distance_m metres behind (e.g. a calf behind its mother).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "leader_id": {"type": "string"},
+                "distance_m": {"type": "number"},
+            },
+            "required": ["id", "leader_id"],
+        },
+    },
+    {
+        "name": "WanderCreature",
+        "description": "Have a creature roam randomly around a landmark.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "around": {"type": "string", "enum": ["herd_start", "watering_hole"]},
+                "radius_m": {"type": "number"},
+                "speed": {"type": "number"},
+            },
+            "required": ["id", "around"],
+        },
+    },
+    {
+        "name": "DespawnCreature",
+        "description": "Remove a single creature by id.",
+        "parameters": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "ClearCreatures",
+        "description": "Remove all creatures.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "Wait",
+        "description": "Pause the script for N seconds between steps (e.g. let a migration finish before drinking).",
+        "parameters": {
+            "type": "object",
+            "properties": {"seconds": {"type": "number"}},
+            "required": ["seconds"],
         },
     },
 ]

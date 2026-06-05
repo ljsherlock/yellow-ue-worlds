@@ -1,6 +1,7 @@
 #include "FlyPawn.h"
 
 #include "GameFramework/FloatingPawnMovement.h"
+#include "GameFramework/PlayerController.h"
 #include "Components/InputComponent.h"
 
 AFlyPawn::AFlyPawn()
@@ -23,6 +24,17 @@ void AFlyPawn::ApplySpeed(float Speed)
 void AFlyPawn::SetupPlayerInputComponent(UInputComponent* InInputComponent)
 {
 	Super::SetupPlayerInputComponent(InInputComponent);
+
+	// Halve mouse-look speed. DefaultPawn's "Turn"/"LookUp" bindings feed raw mouse
+	// delta into AddControllerYaw/PitchInput, which the PlayerController scales by
+	// InputYaw/PitchScale (engine default 2.5/-2.5). Set our halved values here, when
+	// the controller is guaranteed possessed.
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		PC->SetDeprecatedInputYawScale(LookYawScale);
+		PC->SetDeprecatedInputPitchScale(LookPitchScale);
+	}
+
 	if (InInputComponent)
 	{
 		// BindKey works without project-defined input mappings (packaged build safe).

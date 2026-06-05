@@ -47,12 +47,13 @@ const FCreatureDef* ACreatureDirector::ResolveDef(const FName& Type) const
 }
 
 void ACreatureDirector::DefineCreatureType(const FString& Type, const FString& MeshPath,
-	const FString& ClipsCsv, float WalkSpeed, float RunSpeed, float UniformScale)
+	const FString& ClipsCsv, float WalkSpeed, float RunSpeed, float UniformScale, float MeshYawOffset)
 {
 	FCreatureDef Def;
 	if (WalkSpeed > 0.f) { Def.WalkSpeed = WalkSpeed; }
 	if (RunSpeed > 0.f) { Def.RunSpeed = RunSpeed; }
 	Def.UniformScale = UniformScale > 0.f ? UniformScale : 1.f;
+	Def.MeshYawOffset = MeshYawOffset;
 
 	if (!MeshPath.IsEmpty())
 	{
@@ -78,8 +79,8 @@ void ACreatureDirector::DefineCreatureType(const FString& Type, const FString& M
 	}
 
 	DefinedTypes.Add(FName(*Type), Def);
-	Notify(FString::Printf(TEXT("DefineCreatureType '%s' mesh='%s' clips=%d walk=%.0f run=%.0f scale=%.2f"),
-		*Type, *MeshPath, NumClips, Def.WalkSpeed, Def.RunSpeed, Def.UniformScale));
+	Notify(FString::Printf(TEXT("DefineCreatureType '%s' mesh='%s' clips=%d walk=%.0f run=%.0f scale=%.2f yaw=%.0f"),
+		*Type, *MeshPath, NumClips, Def.WalkSpeed, Def.RunSpeed, Def.UniformScale, Def.MeshYawOffset));
 }
 
 float ACreatureDirector::GroundZAt(float X, float Y) const
@@ -132,6 +133,10 @@ void ACreatureDirector::SpawnCreature(const FString& Type, const FString& Id, fl
 	if (Def)
 	{
 		Creature->ApplyDef(*Def);
+	}
+	if (bHaveWaterZ)
+	{
+		Creature->SetWaterLevel(SceneWaterZ);
 	}
 
 	Creatures.Add(IdName, Creature);
@@ -280,4 +285,20 @@ void ACreatureDirector::ListCreatures()
 				*Pair.Value->CurrentState.ToString()));
 		}
 	}
+}
+
+void ACreatureDirector::SetWaterLevel(float SurfaceZ)
+{
+	bHaveWaterZ = true;
+	SceneWaterZ = SurfaceZ;
+	int32 N = 0;
+	for (const TPair<FName, TObjectPtr<ASceneCreature>>& Pair : Creatures)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->SetWaterLevel(SurfaceZ);
+			++N;
+		}
+	}
+	Notify(FString::Printf(TEXT("SetWaterLevel %.0f applied to %d creature(s)"), SurfaceZ, N));
 }

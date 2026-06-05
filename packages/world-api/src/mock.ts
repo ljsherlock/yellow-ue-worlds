@@ -5,6 +5,8 @@ import {
   AdvanceTimeArgsSchema,
   type AdvanceTimeArgs,
   type AdvanceTimeResult,
+  type CreatureAck,
+  type CreatureSpecies,
   SetSkyStateArgsSchema,
   type SetSkyStateArgs,
   type SetSkyStateResult,
@@ -34,10 +36,18 @@ import {
  * The mock maintains plausible world state so the inspector renders something
  * meaningful: trees persist, time advances, the sky remembers its last preset.
  */
+export interface MockCreature {
+  id: string;
+  species: CreatureSpecies;
+  state: string;
+  at: string;
+}
+
 export interface MockWorldState {
   sky: SkyPreset;
   worldTimeHours: number;
   trees: SpawnedTree[];
+  creatures: MockCreature[];
 }
 
 export interface MockWorldAPIClientOptions {
@@ -50,6 +60,7 @@ const defaultState = (): MockWorldState => ({
   sky: "clear",
   worldTimeHours: 0,
   trees: [],
+  creatures: [],
 });
 
 const defaultNow = () => new Date();
@@ -80,6 +91,7 @@ export class MockWorldAPIClient implements WorldAPIClient {
       sky: this.state.sky,
       worldTimeHours: this.state.worldTimeHours,
       trees: [...this.state.trees],
+      creatures: this.state.creatures.map((c) => ({ ...c })),
     };
   }
 
@@ -199,9 +211,85 @@ export class MockWorldAPIClient implements WorldAPIClient {
             tool: "SpawnTrees",
             result: await this.spawnTrees(call.args),
           };
+        case "SpawnCreature": {
+          const { id, species, at } = call.args;
+          const existing = this.state.creatures.find((c) => c.id === id);
+          if (existing) {
+            existing.species = species;
+            existing.at = at;
+            existing.state = "idle";
+          } else {
+            this.state.creatures.push({ id, species, at, state: "idle" });
+          }
+          return {
+            tool: "SpawnCreature",
+            result: this.ack(`spawned ${species} '${id}' at ${at}`),
+          };
+        }
+        case "MoveCreatureTo": {
+          const c = this.state.creatures.find((x) => x.id === call.args.id);
+          if (c) {
+            c.state = "walk";
+            c.at = call.args.to;
+          }
+          return {
+            tool: "MoveCreatureTo",
+            result: this.ack(`'${call.args.id}' -> ${call.args.to}`),
+          };
+        }
+        case "SetCreatureState": {
+          const c = this.state.creatures.find((x) => x.id === call.args.id);
+          if (c) c.state = call.args.state;
+          return {
+            tool: "SetCreatureState",
+            result: this.ack(`'${call.args.id}' state=${call.args.state}`),
+          };
+        }
+        case "SetCreatureLeader":
+          return {
+            tool: "SetCreatureLeader",
+            result: this.ack(
+              `'${call.args.id}' follows '${call.args.leader_id}'`,
+            ),
+          };
+        case "WanderCreature": {
+          const c = this.state.creatures.find((x) => x.id === call.args.id);
+          if (c) c.state = "wander";
+          return {
+            tool: "WanderCreature",
+            result: this.ack(`'${call.args.id}' wanders ${call.args.around}`),
+          };
+        }
+        case "DespawnCreature": {
+          this.state.creatures = this.state.creatures.filter(
+            (x) => x.id !== call.args.id,
+          );
+          return {
+            tool: "DespawnCreature",
+            result: this.ack(`despawned '${call.args.id}'`),
+          };
+        }
+        case "ClearCreatures": {
+          const n = this.state.creatures.length;
+          this.state.creatures = [];
+          return {
+            tool: "ClearCreatures",
+            result: this.ack(`cleared ${n} creature(s)`),
+          };
+        }
+        case "Wait":
+          // Runner-only in the live bridge; the mock just acknowledges.
+          return {
+            tool: "Wait",
+            result: this.ack(`wait ${call.args.seconds}s`),
+          };
       }
     },
   );
+
+  private ack(detail: string): WorldAPIResult<CreatureAck> {
+    return ok<CreatureAck>({ detail, applied_at: this.now().toISOString() });
+  }
 }
 
 const STAGE_ORDER: ReadonlyArray<SpawnedTree["growth_stage"]> = [

@@ -47,7 +47,7 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
 	void DefineCreatureType(const FString& Type, const FString& MeshPath, const FString& ClipsCsv,
-		float WalkSpeed, float RunSpeed, float UniformScale);
+		float WalkSpeed, float RunSpeed, float UniformScale, float MeshYawOffset);
 
 	/** Spawn a creature of `Type` (a CreatureTable row) with handle `Id` at X,Y (ground-snapped), facing Yaw. */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
@@ -87,8 +87,22 @@ public:
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
 	void ListCreatures();
 
+	/**
+	 * Tell every creature the surface height (cm) of the water they're heading
+	 * for so they stop at the shoreline instead of walking down the (collision-
+	 * less) lakebed. Applies to all live creatures and is remembered for ones
+	 * spawned afterwards. Pass a very low Z (or call with the lake's surface)
+	 * per scene; e.g. lake1 -8700, lake2 -6000.
+	 */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	void SetWaterLevel(float SurfaceZ);
+
 private:
 	UPROPERTY() TMap<FName, TObjectPtr<ASceneCreature>> Creatures;
+
+	/** Last SetWaterLevel value, re-applied to creatures spawned later. */
+	bool bHaveWaterZ = false;
+	float SceneWaterZ = 0.f;
 
 	/** Types registered at runtime via DefineCreatureType (checked before CreatureTable). */
 	UPROPERTY() TMap<FName, FCreatureDef> DefinedTypes;

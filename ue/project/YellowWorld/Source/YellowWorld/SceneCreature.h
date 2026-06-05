@@ -59,6 +59,10 @@ public:
 	void SetLeader(ASceneCreature* InLeader, float Distance);
 	void StartWander(const FVector& Center, float Radius, float Speed);
 
+	/** Surface height (cm) of nearby water; the creature stops at the shoreline
+	 *  rather than walking down the collision-less lakebed. */
+	void SetWaterLevel(float SurfaceZ);
+
 	virtual void Tick(float Dt) override;
 
 protected:
@@ -88,6 +92,12 @@ protected:
 	bool bWander = false;
 	FVector WanderCenter = FVector::ZeroVector;
 	float WanderRadius = 0.f;
+
+	// Shoreline stop: when set, a footstep whose ground would sit at/under
+	// (WaterZ + WaterEdgeMargin) is refused and the creature halts at the edge.
+	bool bAvoidWater = false;
+	float WaterZ = 0.f;
+	float WaterEdgeMargin = 80.f;
 
 	void OnReachedGoal();
 	void SetLocomotionState(FName State);

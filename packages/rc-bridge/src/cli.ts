@@ -19,9 +19,15 @@
  * Overrides:  --url http://127.0.0.1:30010   --path <UObject path>
  *             (or env RC_BASE_URL / RC_OBJECT_PATH)
  */
+import { readFileSync } from "node:fs";
+
+import type { WorldAPICall } from "@yellow-ue/world-api";
+
 import type { RCResponse } from "./contract.js";
+import { CREATURE_DIRECTOR_PATH } from "./creatures.js";
 import { HttpRCBridge } from "./http.js";
 import { WORLD_DIRECTOR_PATH } from "./mapping.js";
+import { runPlan } from "./runner.js";
 
 // pnpm/npm may forward a literal `--` separator; drop a leading one.
 const argv = process.argv.slice(2);
@@ -92,6 +98,11 @@ function usage(): never {
       "escape hatch:",
       "  sky      [--pitch -35] [--cloud 0.2] [--fog 0.02]   (back-compat SetSkyState)",
       "  call     --fn <Name> [--params '<json>']            any BlueprintCallable fn",
+      "",
+      "brain plans (Phase 4):",
+      "  run      [--file plan.json | stdin]                 run a WorldAPICall[] plan",
+      "             accepts a raw array or the brain's {result:{toolCalls:[…]}}",
+      "             --creature-path <UObject path>  (or RC_CREATURE_PATH)",
       "",
       "global flags:  --url <baseUrl>   --path <UObject path>",
     ].join("\n"),
@@ -237,9 +248,74 @@ async function main() {
       break;
     }
 
+    case "run": {
+      const file = flag("--file");
+      let raw: string;
+      if (file) {
+        raw = readFileSync(file, "utf8");
+      } else {
+        const chunks: Buffer[] = [];
+        for await (const chunk of process.stdin) {
+          chunks.push(chunk as Buffer);
+        }
+        raw = Buffer.concat(chunks).toString("utf8");
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (e) {
+        console.error(
+          `run: input is not valid JSON: ${e instanceof Error ? e.message : e}`,
+        );
+        process.exit(2);
+      }
+      // Accept a raw WorldAPICall[] or the brain's {result:{toolCalls:[…]}}.
+      const calls = extractToolCalls(parsed);
+      if (!calls) {
+        console.error(
+          "run: could not find tool calls (expected an array or {result:{toolCalls:[…]}})",
+        );
+        process.exit(2);
+      }
+      const creaturePath =
+        flag("--creature-path") ??
+        process.env.RC_CREATURE_PATH ??
+        CREATURE_DIRECTOR_PATH;
+      console.log(
+        `[run] ${calls.length} call(s)  world=${objectPath}  creature=${creaturePath}`,
+      );
+      const steps = await runPlan(calls, bridge, {
+        paths: { worldDirector: objectPath, creatureDirector: creaturePath },
+        onStep: (s) => {
+          const tag = s.response ? (s.response.ok ? "OK" : "FAIL") : "··";
+          const lat = s.response ? ` (${s.response.latencyMs}ms)` : "";
+          console.log(`  [${tag}] #${s.index} ${s.kind}: ${s.detail}${lat}`);
+          if (s.response && !s.response.ok) {
+            console.log(`        error: ${s.response.error}`);
+          }
+        },
+      });
+      const failed = steps.some((s) => s.response && !s.response.ok);
+      console.log(`[run] done — ${steps.length} step(s)${failed ? ", with errors" : ""}`);
+      process.exit(failed ? 1 : 0);
+      break;
+    }
+
     default:
       usage();
   }
+}
+
+/** Pull a WorldAPICall[] out of either a raw array or the brain's /complete body. */
+function extractToolCalls(parsed: unknown): WorldAPICall[] | null {
+  if (Array.isArray(parsed)) return parsed as WorldAPICall[];
+  if (parsed && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+    const result = obj.result as Record<string, unknown> | undefined;
+    const calls = (result?.toolCalls ?? obj.toolCalls) as unknown;
+    if (Array.isArray(calls)) return calls as WorldAPICall[];
+  }
+  return null;
 }
 
 main();

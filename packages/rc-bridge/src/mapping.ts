@@ -1,6 +1,12 @@
 import type { WorldAPICall } from "@yellow-ue/world-api";
 
 import type { RCFunctionCall } from "./contract.js";
+import {
+  CREATURE_DIRECTOR_PATH,
+  DEFAULT_MIGRATION_SPEED,
+  LANDMARKS,
+  spawnOffset,
+} from "./creatures.js";
 
 /**
  * The object path of the world director actor that exposes the world-API
@@ -11,16 +17,34 @@ import type { RCFunctionCall } from "./contract.js";
 export const WORLD_DIRECTOR_PATH =
   "/Game/Maps/Spike.Spike:PersistentLevel.WorldDirector_0";
 
+/** Per-family object paths, overridable so the same mapping drives a different
+ *  map/actor without editing this module (the runner injects env overrides). */
+export interface RCPaths {
+  worldDirector?: string;
+  creatureDirector?: string;
+}
+
 /**
  * Translate a high-level `WorldAPICall` into the low-level Remote Control
- * function call that drives Unreal. This is the real mapping logic the
- * Phase 2 bridge will use — not throwaway inspector code (R1).
+ * function call that drives Unreal. Atmosphere/time/tree verbs target the
+ * WorldDirector; creature verbs target the CreatureDirector. INTENT args
+ * (species + landmark) are resolved to pack/map facts here via the creature
+ * registry, so the brain never emits a mesh path or a coordinate.
+ *
+ * `Wait` is runner-only (a local pause) and has no RC mapping — callers must
+ * intercept it before reaching this function.
  */
-export function toRCFunctionCall(call: WorldAPICall): RCFunctionCall {
+export function toRCFunctionCall(
+  call: WorldAPICall,
+  paths: RCPaths = {},
+): RCFunctionCall {
+  const worldPath = paths.worldDirector ?? WORLD_DIRECTOR_PATH;
+  const creaturePath = paths.creatureDirector ?? CREATURE_DIRECTOR_PATH;
+
   switch (call.tool) {
     case "SetSkyState":
       return {
-        objectPath: WORLD_DIRECTOR_PATH,
+        objectPath: worldPath,
         functionName: "SetSkyState",
         parameters: {
           Preset: call.args.preset,
@@ -29,7 +53,7 @@ export function toRCFunctionCall(call: WorldAPICall): RCFunctionCall {
       };
     case "AdvanceTime":
       return {
-        objectPath: WORLD_DIRECTOR_PATH,
+        objectPath: worldPath,
         functionName: "AdvanceTime",
         parameters: {
           Hours: call.args.hours,
@@ -38,7 +62,7 @@ export function toRCFunctionCall(call: WorldAPICall): RCFunctionCall {
       };
     case "SpawnTrees":
       return {
-        objectPath: WORLD_DIRECTOR_PATH,
+        objectPath: worldPath,
         functionName: "SpawnTrees",
         parameters: {
           CenterX: call.args.area.center.x,
@@ -50,5 +74,83 @@ export function toRCFunctionCall(call: WorldAPICall): RCFunctionCall {
           GrowthStage: call.args.growth_stage ?? "mature",
         },
       };
+
+    case "SpawnCreature": {
+      const lm = LANDMARKS[call.args.at];
+      const off = spawnOffset(call.args.id);
+      return {
+        objectPath: creaturePath,
+        functionName: "SpawnCreature",
+        parameters: {
+          Type: call.args.species,
+          Id: call.args.id,
+          X: lm.x + off.dx,
+          Y: lm.y + off.dy,
+          Yaw: call.args.yaw ?? lm.yaw,
+        },
+      };
+    }
+    case "MoveCreatureTo": {
+      const lm = LANDMARKS[call.args.to];
+      return {
+        objectPath: creaturePath,
+        functionName: "FollowPath",
+        parameters: {
+          Id: call.args.id,
+          PointsCsv: lm.approach,
+          bLoop: false,
+          Speed: call.args.speed ?? DEFAULT_MIGRATION_SPEED,
+        },
+      };
+    }
+    case "SetCreatureState":
+      return {
+        objectPath: creaturePath,
+        functionName: "SetCreatureState",
+        parameters: { Id: call.args.id, State: call.args.state },
+      };
+    case "SetCreatureLeader":
+      return {
+        objectPath: creaturePath,
+        functionName: "SetCreatureLeader",
+        parameters: {
+          Id: call.args.id,
+          LeaderId: call.args.leader_id,
+          // metres -> cm for the engine.
+          Distance: (call.args.distance_m ?? 4) * 100,
+        },
+      };
+    case "WanderCreature": {
+      const lm = LANDMARKS[call.args.around];
+      return {
+        objectPath: creaturePath,
+        functionName: "WanderCreature",
+        parameters: {
+          Id: call.args.id,
+          CenterX: lm.x,
+          CenterY: lm.y,
+          Radius: (call.args.radius_m ?? 15) * 100,
+          Speed: call.args.speed ?? 0,
+        },
+      };
+    }
+    case "DespawnCreature":
+      return {
+        objectPath: creaturePath,
+        functionName: "DespawnCreature",
+        parameters: { Id: call.args.id },
+      };
+    case "ClearCreatures":
+      return {
+        objectPath: creaturePath,
+        functionName: "ClearCreatures",
+        parameters: {},
+      };
+
+    case "Wait":
+      throw new Error(
+        "toRCFunctionCall: 'Wait' is runner-only and has no RC mapping; " +
+          "intercept it before mapping (see runPlan).",
+      );
   }
 }

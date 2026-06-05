@@ -23,13 +23,22 @@ public:
 
 	virtual void SetupPlayerInputComponent(UInputComponent* InInputComponent) override;
 
-	/** Normal cruise speed in cm/s (15000 = 150 m/s, ~10x the stock DefaultPawn). */
+	/** Normal cruise speed in cm/s (4000 = 40 m/s). Tuned down from 150 m/s, which
+	 *  was too fast for close inspection; Shift turbo still crosses the map fast. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
-	float CruiseSpeed = 15000.f;
+	float CruiseSpeed = 4000.f;
 
 	/** Multiplier applied to CruiseSpeed while the turbo key (Shift) is held. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
 	float TurboMultiplier = 10.f;
+
+	/** Mouse look sensitivity (yaw/pitch input scale on the owning PlayerController).
+	 *  Halved from the engine default 2.5/-2.5 — the stock speed felt twice too fast. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float LookYawScale = 1.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float LookPitchScale = -1.25f;
 
 private:
 	void ApplySpeed(float Speed);

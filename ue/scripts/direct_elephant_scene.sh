@@ -34,19 +34,41 @@ call() { # $1=functionName  $2=parameters-json
   echo "  <- $1"
 }
 
-echo "== Registering elephant types =="
-call DefineCreatureType "{\"Type\":\"elephant_adult\",\"MeshPath\":\"$A_MESH\",\"ClipsCsv\":\"$CLIPS\",\"WalkSpeed\":260,\"RunSpeed\":600,\"UniformScale\":1.0}"
-call DefineCreatureType "{\"Type\":\"elephant_baby\",\"MeshPath\":\"$B_MESH\",\"ClipsCsv\":\"$CLIPS\",\"WalkSpeed\":300,\"RunSpeed\":650,\"UniformScale\":1.0}"
+# MeshYawOffset corrects the pack's model-forward axis (the elephant walked
+# left-flank-first at yaw=0). -90 rotates it so the trunk leads; flip to 90 and
+# respawn if it faces the wrong way — it's data now, no recompile.
+YAW_OFF="${YAW_OFF:--90}"
 
-echo "== Spawning herd on the dry ground NE of the watering hole =="
-call SpawnCreature "{\"Type\":\"elephant_adult\",\"Id\":\"matriarch\",\"X\":152000,\"Y\":188000,\"Yaw\":225}"
-call SpawnCreature "{\"Type\":\"elephant_baby\",\"Id\":\"calf\",\"X\":156000,\"Y\":192000,\"Yaw\":225}"
+echo "== Registering elephant types (yaw offset ${YAW_OFF}) =="
+call DefineCreatureType "{\"Type\":\"elephant_adult\",\"MeshPath\":\"$A_MESH\",\"ClipsCsv\":\"$CLIPS\",\"WalkSpeed\":260,\"RunSpeed\":600,\"UniformScale\":1.0,\"MeshYawOffset\":$YAW_OFF}"
+call DefineCreatureType "{\"Type\":\"elephant_baby\",\"MeshPath\":\"$B_MESH\",\"ClipsCsv\":\"$CLIPS\",\"WalkSpeed\":300,\"RunSpeed\":650,\"UniformScale\":1.0,\"MeshYawOffset\":$YAW_OFF}"
 
-echo "== Calf trails the matriarch =="
-call SetCreatureLeader "{\"Id\":\"calf\",\"LeaderId\":\"matriarch\",\"Distance\":1400}"
+# lake2: the interior basin (center 479552,625856, surface -6000, ~1.3 km).
+# SetWaterLevel makes the herd stop at the shoreline instead of wading down the
+# collision-less lakebed; it also applies to creatures spawned afterwards.
+echo "== Telling creatures the lake2 waterline (-6000) =="
+call SetWaterLevel "{\"SurfaceZ\":-6000}"
 
-echo "== Matriarch migrates to the shoreline =="
-call FollowPath "{\"Id\":\"matriarch\",\"PointsCsv\":\"140000,176000;130000,166000;125000,162000\",\"bLoop\":false,\"Speed\":420}"
+# Gentle NW rim of lake2 (terrain-probed: ~15 m above the -6000 waterline, dry),
+# walking SE down to the water. The E/NE/SW rims are +30..100 m ridges; N and W
+# are low. Yaw -53 points the herd toward the lake from the NW.
+#
+# The calf spawns ~3 m NW of (i.e. just behind, relative to the SE march) the
+# matriarch. It MUST start adjacent: the follow logic chases the leader at the
+# leader's own speed, so it can only *maintain* a gap, never close one — spawn it
+# far away and it stays far away. Behind = NW (path heads SE), so offset -X,+Y.
+echo "== Spawning herd on the gentle NW rim of lake2 (calf right behind) =="
+call SpawnCreature "{\"Type\":\"elephant_adult\",\"Id\":\"matriarch\",\"X\":389552,\"Y\":745856,\"Yaw\":-53}"
+call SpawnCreature "{\"Type\":\"elephant_baby\",\"Id\":\"calf\",\"X\":389342,\"Y\":746066,\"Yaw\":-53}"
+
+# FollowDistance is the trailing gap (cm). 400 cm ≈ 4 m keeps the calf tucked in
+# behind the matriarch (the user wants 1–5 m), close enough to read as a pair
+# without the bodies clipping.
+echo "== Calf trails the matriarch (~4 m) =="
+call SetCreatureLeader "{\"Id\":\"calf\",\"LeaderId\":\"matriarch\",\"Distance\":400}"
+
+echo "== Matriarch migrates SE toward lake2; halts at the shoreline =="
+call FollowPath "{\"Id\":\"matriarch\",\"PointsCsv\":\"430000,690000;460000,655000;479552,625856\",\"bLoop\":false,\"Speed\":420}"
 
 WALK_SECS="${WALK_SECS:-75}"
 echo "== Walking to water (~${WALK_SECS}s) =="

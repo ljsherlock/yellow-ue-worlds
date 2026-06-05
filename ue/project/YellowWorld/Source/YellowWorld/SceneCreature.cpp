@@ -124,6 +124,12 @@ void ASceneCreature::SetLeader(ASceneCreature* InLeader, float Distance)
 	bHasTarget = false;
 }
 
+void ASceneCreature::SetWaterLevel(float SurfaceZ)
+{
+	bAvoidWater = true;
+	WaterZ = SurfaceZ;
+}
+
 void ASceneCreature::StartWander(const FVector& Center, float Radius, float Speed)
 {
 	bWander = true;
@@ -193,7 +199,26 @@ void ASceneCreature::Tick(float Dt)
 	const FVector Dir = ToGoal / PlanarDist;
 	const float Step = FMath::Min(SpeedForGoal * Dt, PlanarDist);
 	FVector NewLoc = Self + Dir * Step;
-	NewLoc.Z = GroundZ(NewLoc.X, NewLoc.Y, Self.Z);
+	const float NewGroundZ = GroundZ(NewLoc.X, NewLoc.Y, Self.Z);
+
+	// Shoreline stop: the landscape continues below the lake (water has no
+	// collision), so without this the creature walks down the lakebed. If the
+	// next footstep would sit at/under the waterline, halt here at the edge.
+	if (bAvoidWater && NewGroundZ <= WaterZ + WaterEdgeMargin)
+	{
+		Path.Reset();
+		PathIndex = 0;
+		bHasTarget = false;
+		bWander = false;
+		Leader = nullptr;
+		CurrentSpeed = 0.f;
+		// Face the water, then idle until the director sends an action (drink).
+		FaceDirection(Dir, Dt);
+		SetLocomotionState(TEXT("idle"));
+		return;
+	}
+
+	NewLoc.Z = NewGroundZ;
 	SetActorLocation(NewLoc);
 	FaceDirection(Dir, Dt);
 
