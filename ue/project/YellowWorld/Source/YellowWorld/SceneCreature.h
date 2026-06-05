@@ -48,6 +48,17 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Creature")
 	float CurrentSpeed = 0.f;
 
+	/** True once the creature has stopped at its goal (path/target finished, or
+	 *  halted at the shoreline). Cleared whenever a new movement order is given.
+	 *  This is the read-back the brain/sim polls instead of guessing with sleeps. */
+	UPROPERTY(BlueprintReadOnly, Category = "Creature")
+	bool bArrived = false;
+
+	/** True when the stop was specifically the shoreline halt (i.e. it reached the
+	 *  water's edge), as opposed to a plain goal/path completion. */
+	UPROPERTY(BlueprintReadOnly, Category = "Creature")
+	bool bAtWater = false;
+
 	/** Apply a catalog row (mesh, anim set, speeds, scale). Safe if soft refs are unset. */
 	void ApplyDef(const FCreatureDef& Def);
 

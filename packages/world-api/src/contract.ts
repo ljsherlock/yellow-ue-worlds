@@ -177,6 +177,17 @@ export const WaitArgsSchema = z.object({
 });
 export type WaitArgs = z.input<typeof WaitArgsSchema>;
 
+/** Read-back gate: pause the plan until creature `id` reports arrived=true (via
+ *  the CreatureDirector QueryCreature read-back) or `timeout_seconds` elapses.
+ *  Runner-only: the bridge POLLS Unreal's perception, it does not forward this
+ *  verb raw. This is the perception primitive that replaces a blind `Wait` for
+ *  sequencing — "drink once you actually reach the water", not "drink in 75s". */
+export const WaitForArrivalArgsSchema = z.object({
+  id: EntityIdSchema,
+  timeout_seconds: z.number().positive().max(600).default(120),
+});
+export type WaitForArrivalArgs = z.input<typeof WaitForArrivalArgsSchema>;
+
 /** Creature verbs are fire-and-forget over Remote Control (UE returns no value),
  *  so their dispatch result is a simple acknowledgement. */
 export const CreatureAckSchema = z.object({
@@ -201,6 +212,7 @@ export const WorldAPICallSchema = z.discriminatedUnion("tool", [
   z.object({ tool: z.literal("DespawnCreature"), args: DespawnCreatureArgsSchema }),
   z.object({ tool: z.literal("ClearCreatures"), args: ClearCreaturesArgsSchema }),
   z.object({ tool: z.literal("Wait"), args: WaitArgsSchema }),
+  z.object({ tool: z.literal("WaitForArrival"), args: WaitForArrivalArgsSchema }),
 ]);
 // Caller-facing type — args defaults are optional in the input
 export type WorldAPICall = z.input<typeof WorldAPICallSchema>;
@@ -233,4 +245,5 @@ export type WorldAPIDispatchResult =
   | { tool: "WanderCreature"; result: WorldAPIResult<CreatureAck> }
   | { tool: "DespawnCreature"; result: WorldAPIResult<CreatureAck> }
   | { tool: "ClearCreatures"; result: WorldAPIResult<CreatureAck> }
-  | { tool: "Wait"; result: WorldAPIResult<CreatureAck> };
+  | { tool: "Wait"; result: WorldAPIResult<CreatureAck> }
+  | { tool: "WaitForArrival"; result: WorldAPIResult<CreatureAck> };

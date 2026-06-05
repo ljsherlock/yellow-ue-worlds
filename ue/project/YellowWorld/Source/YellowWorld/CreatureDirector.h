@@ -87,6 +87,17 @@ public:
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
 	void ListCreatures();
 
+	/** Read-back: return a JSON array of every live creature's state
+	 *  (id,type,state,x,y,z,speed,arrived,atWater). Unlike ListCreatures (which
+	 *  only logs), this RETURNS over Remote Control so the brain/sim can perceive
+	 *  the world instead of guessing with wall-clock sleeps. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	FString QueryCreatures();
+
+	/** Read-back for one creature: JSON object as above, or "{}" if unknown. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	FString QueryCreature(const FString& Id);
+
 	/**
 	 * Tell every creature the surface height (cm) of the water they're heading
 	 * for so they stop at the shoreline instead of walking down the (collision-

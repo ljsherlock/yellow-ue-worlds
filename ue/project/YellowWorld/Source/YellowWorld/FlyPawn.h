@@ -23,6 +23,12 @@ public:
 
 	virtual void SetupPlayerInputComponent(UInputComponent* InInputComponent) override;
 
+	// Possession-safe hooks: SetupPlayerInputComponent can run before the pawn is
+	// possessed (GetController() is null then), so applying the look-scale there
+	// alone silently no-ops. These fire after the controller is assigned.
+	virtual void NotifyControllerChanged() override;
+	virtual void PawnClientRestart() override;
+
 	/** Normal cruise speed in cm/s (4000 = 40 m/s). Tuned down from 150 m/s, which
 	 *  was too fast for close inspection; Shift turbo still crosses the map fast. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
@@ -42,6 +48,9 @@ public:
 
 private:
 	void ApplySpeed(float Speed);
+	/** Push LookYaw/PitchScale onto the owning PlayerController. Safe to call
+	 *  repeatedly; no-ops until a PlayerController possesses this pawn. */
+	void ApplyLookScale();
 	void TurboOn();
 	void TurboOff();
 };

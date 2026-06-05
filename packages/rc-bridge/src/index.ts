@@ -10,3 +10,10 @@ export {
 } from "./creatures.js";
 export { runPlan } from "./runner.js";
 export type { RunPlanOptions, RunStep } from "./runner.js";
+export {
+  parseCreature,
+  parseCreatures,
+  queryCreatureCall,
+  queryCreaturesCall,
+} from "./perception.js";
+export type { CreatureState } from "./perception.js";

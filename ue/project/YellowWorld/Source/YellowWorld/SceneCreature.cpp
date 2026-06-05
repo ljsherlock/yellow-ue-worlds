@@ -70,6 +70,8 @@ void ASceneCreature::MoveTo(const FVector& World, float Speed)
 	TargetLoc = World;
 	bHasTarget = true;
 	DesiredSpeed = Speed > 0.f ? Speed : WalkSpeed;
+	bArrived = false;
+	bAtWater = false;
 }
 
 void ASceneCreature::SetPath(const TArray<FVector>& Points, bool bLoop, float Speed)
@@ -81,6 +83,8 @@ void ASceneCreature::SetPath(const TArray<FVector>& Points, bool bLoop, float Sp
 	PathIndex = 0;
 	bLoopPath = bLoop;
 	DesiredSpeed = Speed > 0.f ? Speed : WalkSpeed;
+	bArrived = false;
+	bAtWater = false;
 }
 
 void ASceneCreature::SetStateName(FName State)
@@ -122,6 +126,8 @@ void ASceneCreature::SetLeader(ASceneCreature* InLeader, float Distance)
 	Path.Reset();
 	PathIndex = 0;
 	bHasTarget = false;
+	bArrived = false;
+	bAtWater = false;
 }
 
 void ASceneCreature::SetWaterLevel(float SurfaceZ)
@@ -141,6 +147,8 @@ void ASceneCreature::StartWander(const FVector& Center, float Radius, float Spee
 	PathIndex = 0;
 	bHasTarget = false;
 	TargetLoc = PickWanderTarget();
+	bArrived = false;
+	bAtWater = false;
 }
 
 // --- tick / movement --------------------------------------------------------
@@ -212,6 +220,8 @@ void ASceneCreature::Tick(float Dt)
 		bWander = false;
 		Leader = nullptr;
 		CurrentSpeed = 0.f;
+		bArrived = true;
+		bAtWater = true;
 		// Face the water, then idle until the director sends an action (drink).
 		FaceDirection(Dir, Dt);
 		SetLocomotionState(TEXT("idle"));
@@ -247,6 +257,7 @@ void ASceneCreature::OnReachedGoal()
 				Path.Reset();
 				PathIndex = 0;
 				CurrentSpeed = 0.f;
+				bArrived = true;
 				SetLocomotionState(TEXT("idle"));
 			}
 		}
@@ -255,6 +266,7 @@ void ASceneCreature::OnReachedGoal()
 	// Single MoveTo reached.
 	bHasTarget = false;
 	CurrentSpeed = 0.f;
+	bArrived = true;
 	SetLocomotionState(TEXT("idle"));
 }
 

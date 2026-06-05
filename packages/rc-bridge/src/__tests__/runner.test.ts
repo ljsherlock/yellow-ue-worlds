@@ -87,18 +87,81 @@ describe("runPlan — elephant scene", () => {
     });
 
     const spawn = calls.find(
-      (c) => c.functionName === "SpawnCreature" && c.parameters.Id === "matriarch",
+      (c) => c.functionName === "SpawnCreature" && c.parameters?.Id === "matriarch",
     );
-    // Resolved near the herd_start landmark (389552, 745856) with small scatter.
-    expect(Math.abs((spawn?.parameters.X as number) - 389552)).toBeLessThan(400);
-    expect(Math.abs((spawn?.parameters.Y as number) - 745856)).toBeLessThan(400);
+    // Resolved near the herd_start landmark (408400, 719700) with small scatter.
+    expect(Math.abs((spawn?.parameters?.X as number) - 408400)).toBeLessThan(400);
+    expect(Math.abs((spawn?.parameters?.Y as number) - 719700)).toBeLessThan(400);
 
     const leader = calls.find((c) => c.functionName === "SetCreatureLeader");
     // 4 m -> 400 cm.
     expect(leader?.parameters).toMatchObject({ Distance: 400 });
 
     const follow = calls.find((c) => c.functionName === "FollowPath");
-    expect(follow?.parameters.PointsCsv).toContain("479552,625856");
+    expect(follow?.parameters?.PointsCsv).toContain("479552,625856");
+  });
+
+  it("WaitForArrival polls QueryCreature until arrived, then proceeds", async () => {
+    const calls: RCFunctionCall[] = [];
+    let polls = 0;
+    const bridge: RCBridge = {
+      callFunction: async (req: RCFunctionCall): Promise<RCResponse> => {
+        calls.push(req);
+        let returnValue: unknown = {};
+        if (req.functionName === "QueryCreature") {
+          polls += 1;
+          const arrived = polls >= 2; // arrive on the 2nd poll
+          returnValue = {
+            ReturnValue: JSON.stringify({
+              id: "matriarch",
+              type: "elephant_adult",
+              state: arrived ? "idle" : "walk",
+              x: 1,
+              y: 2,
+              z: 3,
+              speed: arrived ? 0 : 200,
+              arrived,
+              atWater: arrived,
+            }),
+          };
+        }
+        return {
+          ok: true,
+          httpStatus: 200,
+          latencyMs: 1,
+          requestId: "t",
+          wire: { method: "PUT", url: "t", body: req },
+          returnValue,
+        };
+      },
+      setProperty: async (): Promise<RCResponse> => {
+        throw new Error("not used");
+      },
+    };
+
+    const plan: WorldAPICall[] = [
+      { tool: "MoveCreatureTo", args: { id: "matriarch", to: "watering_hole" } },
+      { tool: "WaitForArrival", args: { id: "matriarch", timeout_seconds: 10 } },
+      { tool: "SetCreatureState", args: { id: "matriarch", state: "drink" } },
+    ];
+    const steps = await runPlan(plan, bridge, {
+      sleep: async () => {},
+      arrivalPollMs: 100,
+    });
+
+    const queries = calls.filter((c) => c.functionName === "QueryCreature");
+    expect(queries.length).toBeGreaterThanOrEqual(2);
+
+    // The drink only fires after the final (arrived) poll.
+    const order = calls.map((c) => c.functionName);
+    expect(order.indexOf("SetCreatureState")).toBeGreaterThan(
+      order.lastIndexOf("QueryCreature"),
+    );
+
+    const wait = steps.find((s) => s.tool === "WaitForArrival");
+    expect(wait?.detail).toContain("arrived");
+    // A WaitForArrival is never forwarded to UE as a function call by name.
+    expect(order).not.toContain("WaitForArrival");
   });
 
   it("stops on the first RC failure", async () => {

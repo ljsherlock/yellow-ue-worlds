@@ -13,10 +13,11 @@ INFRA_DIR="${INFRA_DIR:-$HOME/PixelStreamingInfrastructure}"
 INFRA_BRANCH="${INFRA_BRANCH:-UE5.7}"
 RC="${RC:-0}"   # 1 => enable Remote Control (Spike 1b)
 # STREAM_MAP (optional): open this map instead of the packaged GameDefaultMap.
-# Passed as the first positional arg to the launcher. Unset => boots the
-# DefaultEngine.ini default map (the spike). e.g.
-#   STREAM_MAP=/Game/8KSavannahLandscapePack/Scenes/Landscapes/Landscape_1
-STREAM_MAP="${STREAM_MAP:-}"
+# Passed as the first positional arg to the launcher. Defaults to the savanna
+# landscape because that is what we cook/package; the old spike map is no longer
+# staged, so an empty value would fall back to /Game/Maps/Spike and exit on boot.
+# Override with STREAM_MAP=... to open a different cooked map.
+STREAM_MAP="${STREAM_MAP:-/Game/8KSavannahLandscapePack/Scenes/Landscapes/Landscape_1}"
 
 # Locate the packaged launcher (.sh next to the staged build).
 APP_SH="$PACKAGED/YellowWorld.sh"

@@ -27,6 +27,13 @@ import type { RCResponse } from "./contract.js";
 import { CREATURE_DIRECTOR_PATH } from "./creatures.js";
 import { HttpRCBridge } from "./http.js";
 import { WORLD_DIRECTOR_PATH } from "./mapping.js";
+import {
+  parseCreature,
+  parseCreatures,
+  queryCreatureCall,
+  queryCreaturesCall,
+  type CreatureState,
+} from "./perception.js";
 import { runPlan } from "./runner.js";
 
 // pnpm/npm may forward a literal `--` separator; drop a leading one.
@@ -99,10 +106,15 @@ function usage(): never {
       "  sky      [--pitch -35] [--cloud 0.2] [--fog 0.02]   (back-compat SetSkyState)",
       "  call     --fn <Name> [--params '<json>']            any BlueprintCallable fn",
       "",
+      "read-back / perception (6.3):",
+      "  query    [--id <handle>]                            QueryCreature(s) live state",
+      "             --creature-path <UObject path>  (or RC_CREATURE_PATH)",
+      "",
       "brain plans (Phase 4):",
       "  run      [--file plan.json | stdin]                 run a WorldAPICall[] plan",
       "             accepts a raw array or the brain's {result:{toolCalls:[…]}}",
       "             --creature-path <UObject path>  (or RC_CREATURE_PATH)",
+      "             --keep-going                    don't abort on a failed step",
       "",
       "global flags:  --url <baseUrl>   --path <UObject path>",
     ].join("\n"),
@@ -248,6 +260,30 @@ async function main() {
       break;
     }
 
+    case "query": {
+      const creaturePath =
+        flag("--creature-path") ??
+        process.env.RC_CREATURE_PATH ??
+        CREATURE_DIRECTOR_PATH;
+      const id = flag("--id");
+      const fmt = (c: CreatureState) =>
+        `  ${c.id} [${c.type}] state=${c.state} pos=(${Math.round(c.x)},${Math.round(c.y)},${Math.round(c.z)}) speed=${Math.round(c.speed)} arrived=${c.arrived} atWater=${c.atWater}`;
+      if (id) {
+        const res = await bridge.callFunction(queryCreatureCall(id, creaturePath));
+        if (!res.ok) report(res);
+        const c = parseCreature(res.returnValue);
+        console.log(c ? fmt(c) : `  (no creature "${id}")`);
+        process.exit(0);
+      }
+      const res = await bridge.callFunction(queryCreaturesCall(creaturePath));
+      if (!res.ok) report(res);
+      const list = parseCreatures(res.returnValue);
+      console.log(`[query] ${list.length} creature(s)`);
+      for (const c of list) console.log(fmt(c));
+      process.exit(0);
+      break;
+    }
+
     case "run": {
       const file = flag("--file");
       let raw: string;
@@ -281,11 +317,13 @@ async function main() {
         flag("--creature-path") ??
         process.env.RC_CREATURE_PATH ??
         CREATURE_DIRECTOR_PATH;
+      const keepGoing = argv.includes("--keep-going");
       console.log(
-        `[run] ${calls.length} call(s)  world=${objectPath}  creature=${creaturePath}`,
+        `[run] ${calls.length} call(s)  world=${objectPath}  creature=${creaturePath}${keepGoing ? "  (keep-going)" : ""}`,
       );
       const steps = await runPlan(calls, bridge, {
         paths: { worldDirector: objectPath, creatureDirector: creaturePath },
+        stopOnError: !keepGoing,
         onStep: (s) => {
           const tag = s.response ? (s.response.ok ? "OK" : "FAIL") : "··";
           const lat = s.response ? ` (${s.response.latencyMs}ms)` : "";

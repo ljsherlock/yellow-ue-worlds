@@ -8,15 +8,16 @@ brain to the live creature system and the ecosystem that follows._
 
 | Item | Status | Note |
 |---|---|---|
-| 6.1 WorldAPI contract (creature verbs) | ✅ done | verbs + runner-only `Wait` in `contract.ts`, mock + codegen |
+| 6.1 WorldAPI contract (creature verbs) | ✅ done | verbs + runner-only `Wait`/`WaitForArrival` in `contract.ts`, mock + codegen |
 | 6.2 rc-bridge mapping → CreatureDirector | ✅ done* | registry in `creatures.ts`; path via constant + `RC_CREATURE_PATH`/`--creature-path` override (not yet a stable in-map tag) |
-| 6.3 Read-back / perception | ⬜ pending | the gate. RC verbs still void+log; no getter verbs |
-| 6.4 LangGraph: NL → live scene | ✅ fake / ⚠ Gemini | `plan.py` + `scene.sh` + `runPlan`; proven end-to-end with the deterministic FakeProvider (creature-only prompt). Gemini works but trips 6.5 |
-| 6.5 Reconcile (sky/time, SceneSpec) | ⬜ partial | diagnosed: savanna map has **no** `WorldDirector`, so sky/time verbs fail and the runner aborts. Fix not yet applied |
+| 6.3 Read-back / perception | ✅ done | `QueryCreature(s)` RC verbs return live JSON; `arrived`/`atWater` flags on `ASceneCreature`; bridge `perception.ts` + `query` CLI; `WaitForArrival` polls until arrived. **Verified live.** |
+| 6.4 LangGraph: NL → live scene | ✅ fake / ⚠ Gemini | `plan.py` + `scene.sh` + `runPlan`; proven end-to-end with the FakeProvider. Gemini path no longer trips 6.5 (sky fixed); Gemini still needs a real-key smoke test |
+| 6.5 Reconcile (sky/time, SceneSpec) | ✅ done | `WorldDirector` baked into the savanna map (`add_worlddirector.py` + `ADD_WORLDDIRECTOR` build flag); mapping fixed (`SetSkyState`→`SetWeatherPreset`, `AdvanceTime`→`SetTimeOfDay`); runner `--keep-going`. **`sunset` verified live on savanna.** `SceneSpec`↔verbs still to reconcile (next installment) |
 
-End-to-end **is live**: `scene.sh "<prompt>"` → brain plan → `rc-bridge run` →
-herd spawns/migrates/drinks over the RC tunnel (FakeProvider). The chain runs
-locally over the SSH RC tunnel to the VM, as decided.
+End-to-end **is live**: `scene.sh "…sunset…drinks"` → brain plan → `rc-bridge run`
+→ herd spawns, migrates, and drinks **on perceived arrival** (`WaitForArrival`),
+with `sunset` applied to the savanna sky. The chain runs locally over the SSH RC
+tunnel to the VM, as decided.
 
 **Findings since planning (feed the behaviour tier):**
 
@@ -53,7 +54,8 @@ the creature verbs existed — so this is mostly **extend + reconcile**, not gre
 
 ## NOW — Step 6: Brain integration (verbs out **+** state in)
 
-6.1 + 6.2 + 6.4 landed; 6.3 (the gate) and 6.5 remain.
+6.1 + 6.2 + 6.3 + 6.4 + 6.5 landed; only the Gemini real-key smoke test and the
+`SceneSpec`↔verb reconcile remain (next installment).
 
 - [x] **6.1 WorldAPI contract** — creature verbs added (`spawn_creature`,
   `move_creature_to`/`follow_path`, `set_creature_state`, `set_creature_leader`,
@@ -65,31 +67,36 @@ the creature verbs existed — so this is mostly **extend + reconcile**, not gre
   bootstrap calls per species/landmark. _Caveat:_ `objectPath` resolves via a
   default constant + `RC_CREATURE_PATH`/`--creature-path` override — a **stable
   in-map tag** is still the clean follow-up (no editor-only `GetAllLevelActors`).
-- [ ] **6.3 Read-back / perception** (the under-rated half, **the gate**) — verbs
-  that *return* world state: creature id → position/state, plus events ("reached
-  water"). Still pending: RC verbs are void + log only. _Proven feasible_ over plain
-  RC via `GetPlayerPawn`/property reads and the `SpawnCreature`-logs-snapped-Z probe;
-  needs first-class getter verbs.
+- [x] **6.3 Read-back / perception** (the under-rated half, **the gate**) — **done.**
+  `CreatureDirector::QueryCreature(s)` return live JSON (`id,type,state,x,y,z,speed,
+  arrived,atWater`); `ASceneCreature` now carries `bArrived`/`bAtWater` (set on
+  goal/shoreline, cleared on new orders). Bridge: `perception.ts` (`queryCreature(s)Call`
+  + parsers), a `query` CLI, and a `WaitForArrival` verb the runner honours by
+  **polling until arrived**. Verified live: the drink fires on real arrival, not a
+  clock (`#5 wait: matriarch: arrived … atWater=true`).
 - [x] **6.4 LangGraph** — verbs + planning prompt registered (`providers.py`),
   one-shot `plan.py`, `scene.sh` wrapper, `runPlan` executor. NL → live scene
   **proven** with the FakeProvider (creature-only prompt); the hand-scripted
   `direct_elephant_scene.sh` is now LLM-emitted. Gemini path wired but see 6.5.
-- [ ] **6.5 Reconcile** — diagnosed, not fixed: the savanna map (`Landscape_1`)
-  has **no `WorldDirector`**, so Gemini's `SetSkyState`/time verbs fail and
-  `runPlan` aborts (`stopOnError` default). Fix options: (a) add `--keep-going` so
-  non-creature failures don't kill the scene; (b) author a `WorldDirector` into the
-  savanna map + recook. `SceneSpec` ↔ creature verbs still to reconcile.
+- [x] **6.5 Reconcile** — **done** (both fixes applied): (a) runner `--keep-going`
+  (`stopOnError=false`, wired to `scene.sh`) so a stray world-verb never kills the
+  scene; (b) a `WorldDirector` is now **baked into the savanna map** via
+  `add_worlddirector.py` + the `ADD_WORLDDIRECTOR` build flag — `CacheActors` finds
+  the pack's own sun/sky, so `SetWeatherPreset` drives them. Mapping bug also fixed:
+  the brain's preset now maps to `SetWeatherPreset` (not the float `SetSkyState`),
+  and `AdvanceTime`→`SetTimeOfDay`. `sunset` confirmed live on `Landscape_1`.
+  _Remaining:_ `SceneSpec` ↔ creature verbs (next installment).
 
 ---
 
 ## Prerequisites before the ecosystem (easy to miss)
 
-- [ ] **Read-back loop (6.3)** — hard gate; nothing in the behaviour tier works
-  until the LLM/sim can perceive state. **Still open.**
-- [~] **Entity addressing** — id ↔ actor lives in the bridge/`CreatureDirector`
-  registry and drives all verbs; not yet *exposed back* for perception.
+- [x] **Read-back loop (6.3)** — **done.** `QueryCreature(s)` + `WaitForArrival`
+  give the LLM/sim live state to act on.
+- [x] **Entity addressing** — id ↔ actor in the `CreatureDirector` registry now
+  **exposed back** via `QueryCreature(Id)` for perception.
 - [ ] **Event/tick channel** — so the slow LLM loop is triggered by world events,
-  not polling. **Still open.**
+  not polling. **Still open** (`WaitForArrival` polls; a push channel is the upgrade).
 - [~] **Observability** — the camera is now drivable over RC and has sane baked
   defaults (free-cam usable), but a first-class **snap-to / follow-creature** verb
   (and screenshot) is still missing.

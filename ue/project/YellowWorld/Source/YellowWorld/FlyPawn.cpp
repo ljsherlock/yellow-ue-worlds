@@ -21,19 +21,43 @@ void AFlyPawn::ApplySpeed(float Speed)
 	}
 }
 
-void AFlyPawn::SetupPlayerInputComponent(UInputComponent* InInputComponent)
+void AFlyPawn::ApplyLookScale()
 {
-	Super::SetupPlayerInputComponent(InInputComponent);
-
-	// Halve mouse-look speed. DefaultPawn's "Turn"/"LookUp" bindings feed raw mouse
-	// delta into AddControllerYaw/PitchInput, which the PlayerController scales by
-	// InputYaw/PitchScale (engine default 2.5/-2.5). Set our halved values here, when
-	// the controller is guaranteed possessed.
+	// DefaultPawn's "Turn"/"LookUp" bindings feed raw mouse delta into
+	// AddControllerYaw/PitchInput, which the PlayerController multiplies by its
+	// (deprecated) Input Yaw/Pitch scale. On UE 5.7 that scale defaults to 0, so
+	// without setting it mouse-look is dead. We push our halved values here.
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		PC->SetDeprecatedInputYawScale(LookYawScale);
 		PC->SetDeprecatedInputPitchScale(LookPitchScale);
 	}
+}
+
+void AFlyPawn::NotifyControllerChanged()
+{
+	Super::NotifyControllerChanged();
+	// Fires whenever the Controller pointer changes (i.e. on possession), which is
+	// the reliable moment to apply input scaling — SetupPlayerInputComponent can
+	// run earlier, before GetController() is valid, and silently no-op.
+	ApplyLookScale();
+}
+
+void AFlyPawn::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+	// Belt-and-suspenders: also runs on the owning client after the input stack is
+	// (re)built, covering Pixel-Streaming late-join/possession ordering.
+	ApplyLookScale();
+}
+
+void AFlyPawn::SetupPlayerInputComponent(UInputComponent* InInputComponent)
+{
+	Super::SetupPlayerInputComponent(InInputComponent);
+
+	// Best-effort here too; the authoritative application is in the possession
+	// hooks above (NotifyControllerChanged / PawnClientRestart).
+	ApplyLookScale();
 
 	if (InInputComponent)
 	{

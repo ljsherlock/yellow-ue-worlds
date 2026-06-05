@@ -59,6 +59,15 @@ void AWorldDirector::BeginPlay()
 	CacheActors();
 	ApplyManualExposure();
 	ApplySunRotation();
+
+	// Apply a default weather preset on boot so a freshly-streamed build is lit
+	// (sun intensity + time of day). Manual exposure alone leaves the scene black
+	// until a preset runs; this removes the need to push one over Remote Control
+	// every launch. Disable by clearing DefaultBootPreset.
+	if (!DefaultBootPreset.IsEmpty())
+	{
+		SetWeatherPreset(DefaultBootPreset);
+	}
 }
 
 void AWorldDirector::ApplyManualExposure()

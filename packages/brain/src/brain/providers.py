@@ -133,9 +133,9 @@ def _match_creatures(p: str) -> Optional[tuple[list[dict], str]]:
 
     Mirrors the proven hand-scripted scene (direct_elephant_scene.sh) as an
     ordered list of INTENT verbs: spawn a matriarch + a trailing calf at the
-    herd_start, migrate to the watering_hole, then drink. `Wait` carries the
-    scripted timing (walk, then drink on arrival) until the read-back loop lets
-    actions fire on world events instead."""
+    herd_start, migrate to the watering_hole, then drink. Sequencing is now
+    PERCEPTION-gated: WaitForArrival polls the matriarch's read-back and fires
+    the drink the moment she actually reaches the shore (not on a guessed clock)."""
     if not re.search(r"elephant|herd|matriarch|calf", p):
         return None
 
@@ -148,9 +148,10 @@ def _match_creatures(p: str) -> Optional[tuple[list[dict], str]]:
     if migrates:
         calls.append({"tool": "MoveCreatureTo", "args": {"id": "matriarch", "to": "watering_hole"}})
     if re.search(r"drink|water", p):
-        # The migration takes ~75s; drink once the matriarch reaches the shore,
-        # the calf a beat later.
-        calls.append({"tool": "Wait", "args": {"seconds": 75}})
+        # Drink once the matriarch's read-back reports she reached the shore
+        # (arrived=true), then the calf a beat later. WaitForArrival replaces the
+        # old blind Wait(75) — the brain now acts on world events, not a clock.
+        calls.append({"tool": "WaitForArrival", "args": {"id": "matriarch", "timeout_seconds": 180}})
         calls.append({"tool": "SetCreatureState", "args": {"id": "matriarch", "state": "drink"}})
         calls.append({"tool": "Wait", "args": {"seconds": 4}})
         calls.append({"tool": "SetCreatureState", "args": {"id": "calf", "state": "drink"}})
@@ -407,6 +408,8 @@ def _normalize_tool_call(tc: dict) -> dict:
         args.setdefault("distance_m", 4)
     elif name == "WanderCreature":
         args.setdefault("radius_m", 15)
+    elif name == "WaitForArrival":
+        args.setdefault("timeout_seconds", 120)
     return {"tool": name, "args": args}
 
 
@@ -426,11 +429,13 @@ _SYSTEM_PROMPT = (
     "MoveCreatureTo(id, to) walks it to a landmark (it auto-stops at the "
     "shoreline); SetCreatureState(id, state) puts it into an action like drink; "
     "WanderCreature(id, around) for idle roaming; DespawnCreature/ClearCreatures "
-    "to remove. Wait(seconds) pauses the SCRIPT between steps — use it to let a "
-    "migration finish (~75 s to the watering_hole) before you make them drink.\n\n"
+    "to remove. WaitForArrival(id) pauses the SCRIPT until that creature actually "
+    "reaches its goal (preferred — act on world events); Wait(seconds) is a blind "
+    "timed pause when you have no creature to wait on.\n\n"
     "A herd migrating to drink looks like: spawn the matriarch (elephant_adult), "
     "spawn a calf (elephant_baby), make the calf follow the matriarch, move the "
-    "matriarch to the watering_hole, Wait, then set both to drink.\n\n"
+    "matriarch to the watering_hole, WaitForArrival(matriarch), then set both to "
+    "drink.\n\n"
     "You can also set the sky (SetSkyState) and time (AdvanceTime). Only call "
     "tools the request implies; do not invent parameters."
 )
@@ -561,6 +566,22 @@ _GEMINI_TOOLS = [
             "type": "object",
             "properties": {"seconds": {"type": "number"}},
             "required": ["seconds"],
+        },
+    },
+    {
+        "name": "WaitForArrival",
+        "description": (
+            "Pause until a creature actually reaches its goal (its read-back reports "
+            "arrived=true) or times out. PREFER this over Wait for 'do X when they get "
+            "there' — e.g. drink once the matriarch reaches the shore."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "timeout_seconds": {"type": "number"},
+            },
+            "required": ["id"],
         },
     },
 ]

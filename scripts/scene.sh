@@ -17,6 +17,9 @@
 #   RC_BASE_URL       RC web server  (default http://127.0.0.1:30010 — the tunnel)
 #   RC_CREATURE_PATH  CreatureDirector object path (default = Landscape_1 CreatureDirector_0;
 #                     see the add_creatures.py author log if it differs)
+#   RC_WORLD_PATH     WorldDirector object path for sky/time (default = Landscape_1
+#                     WorldDirector_0, baked in by add_worlddirector.py). The Spike
+#                     default in mapping.ts does NOT exist on the savanna map.
 #   GOOGLE_API_KEY    if set (or in packages/brain/.env), the brain uses Gemini;
 #                     otherwise the deterministic offline FakeProvider.
 set -euo pipefail
@@ -24,6 +27,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROMPT="${*:?usage: scene.sh <natural language prompt>}"
 RC_URL="${RC_BASE_URL:-http://127.0.0.1:30010}"
+# The WorldDirector baked into the savanna map (add_worlddirector.py). Sky/time
+# verbs target this; without it they'd hit the Spike default and 404.
+RC_WORLD_PATH="${RC_WORLD_PATH:-/Game/8KSavannahLandscapePack/Scenes/Landscapes/Landscape_1.Landscape_1:PersistentLevel.WorldDirector_0}"
 
 echo "== brain: planning ==" >&2
 PLAN="$(cd "$ROOT/packages/brain" && uv run python -m brain.plan "$PROMPT")"
@@ -33,5 +39,6 @@ echo >&2
 echo "== bridge: executing over $RC_URL ==" >&2
 printf '%s' "$PLAN" | (
   cd "$ROOT/packages/rc-bridge" &&
-    RC_BASE_URL="$RC_URL" ./node_modules/.bin/tsx src/cli.ts run --url "$RC_URL"
+    RC_BASE_URL="$RC_URL" ./node_modules/.bin/tsx src/cli.ts run \
+      --url "$RC_URL" --path "$RC_WORLD_PATH" --keep-going
 )

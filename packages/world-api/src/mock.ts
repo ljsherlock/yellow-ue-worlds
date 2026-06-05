@@ -283,6 +283,13 @@ export class MockWorldAPIClient implements WorldAPIClient {
             tool: "Wait",
             result: this.ack(`wait ${call.args.seconds}s`),
           };
+        case "WaitForArrival":
+          // Runner-only: the live bridge polls QueryCreature; the mock (no live
+          // perception) just acknowledges as if the creature arrived instantly.
+          return {
+            tool: "WaitForArrival",
+            result: this.ack(`await arrival of ${call.args.id}`),
+          };
       }
     },
   );

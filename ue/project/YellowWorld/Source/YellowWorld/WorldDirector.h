@@ -144,6 +144,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|World")
 	float BaseExposureComp = -13.f;
 
+	/** Weather preset applied automatically on BeginPlay so a freshly-streamed
+	 *  build is lit (sun intensity + time of day) instead of a black screen.
+	 *  Manual exposure alone leaves the scene dark until a preset runs. Set empty
+	 *  to disable and boot with no preset. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|World")
+	FString DefaultBootPreset = TEXT("midday");
+
 protected:
 	virtual void BeginPlay() override;
 

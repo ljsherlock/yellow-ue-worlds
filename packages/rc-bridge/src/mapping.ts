@@ -43,22 +43,22 @@ export function toRCFunctionCall(
 
   switch (call.tool) {
     case "SetSkyState":
+      // The brain speaks named moods (clear/sunset/storm/…); WorldDirector's
+      // preset entry point is SetWeatherPreset(FString). (The legacy float-based
+      // SetSkyState(pitch,cloud,fog) is NOT this — mapping there silently no-ops.)
+      // SetWeatherPreset is instant, so transition_seconds is dropped.
       return {
         objectPath: worldPath,
-        functionName: "SetSkyState",
-        parameters: {
-          Preset: call.args.preset,
-          TransitionSeconds: call.args.transition_seconds ?? 5,
-        },
+        functionName: "SetWeatherPreset",
+        parameters: { Preset: call.args.preset },
       };
     case "AdvanceTime":
+      // WorldDirector exposes SetTimeOfDay(Hours) (absolute, 0–24, Fmod'd), not an
+      // incremental AdvanceTime; treat `hours` as the target hour-of-day.
       return {
         objectPath: worldPath,
-        functionName: "AdvanceTime",
-        parameters: {
-          Hours: call.args.hours,
-          SpeedMultiplier: call.args.speed_multiplier ?? 1,
-        },
+        functionName: "SetTimeOfDay",
+        parameters: { Hours: call.args.hours },
       };
     case "SpawnTrees":
       return {
@@ -151,6 +151,11 @@ export function toRCFunctionCall(
       throw new Error(
         "toRCFunctionCall: 'Wait' is runner-only and has no RC mapping; " +
           "intercept it before mapping (see runPlan).",
+      );
+    case "WaitForArrival":
+      throw new Error(
+        "toRCFunctionCall: 'WaitForArrival' is runner-only (it polls " +
+          "QueryCreature); intercept it before mapping (see runPlan).",
       );
   }
 }

@@ -8,6 +8,7 @@ import {
   setWaterLevelCall,
 } from "./creatures.js";
 import { toRCFunctionCall, WORLD_DIRECTOR_PATH, type RCPaths } from "./mapping.js";
+import { parseCreature, queryCreatureCall } from "./perception.js";
 
 /**
  * Execute a brain plan — an ordered list of `WorldAPICall`s — against a live
@@ -30,6 +31,8 @@ export interface RunPlanOptions {
   onStep?: (step: RunStep) => void;
   /** Stop on the first failed RC call. Default true. */
   stopOnError?: boolean;
+  /** How often `WaitForArrival` polls QueryCreature, ms. Default 1000. */
+  arrivalPollMs?: number;
 }
 
 export interface RunStep {
@@ -52,6 +55,7 @@ export async function runPlan(
 ): Promise<RunStep[]> {
   const sleep = options.sleep ?? realSleep;
   const stopOnError = options.stopOnError ?? true;
+  const arrivalPollMs = options.arrivalPollMs ?? 1000;
   const creaturePath = options.paths?.creatureDirector ?? CREATURE_DIRECTOR_PATH;
   const worldPath = options.paths?.worldDirector ?? WORLD_DIRECTOR_PATH;
   const paths: RCPaths = {
@@ -73,6 +77,43 @@ export async function runPlan(
       const ms = Math.round(call.args.seconds * 1000);
       record({ index: i, tool: "Wait", kind: "wait", detail: `sleep ${call.args.seconds}s` });
       await sleep(ms);
+      continue;
+    }
+
+    // Read-back gate: poll the creature's live state until it has arrived (or we
+    // hit the timeout). This is perception driving sequencing — the action after
+    // it fires when the herd actually reaches the water, not on a guessed clock.
+    if (call.tool === "WaitForArrival") {
+      const id = call.args.id;
+      const timeoutMs = Math.round((call.args.timeout_seconds ?? 120) * 1000);
+      const query = queryCreatureCall(id, creaturePath);
+      let arrived = false;
+      let waited = 0;
+      let last = "no-data";
+      // Poll inclusively of t=0 so an already-arrived creature returns at once.
+      for (;;) {
+        const res = await bridge.callFunction(query);
+        const state = parseCreature(res.returnValue);
+        if (state) {
+          last = `${state.state}@(${Math.round(state.x)},${Math.round(state.y)}) arrived=${state.arrived} atWater=${state.atWater}`;
+          if (state.arrived) {
+            arrived = true;
+            break;
+          }
+        }
+        if (waited >= timeoutMs) {
+          break;
+        }
+        await sleep(arrivalPollMs);
+        waited += arrivalPollMs;
+      }
+      record({
+        index: i,
+        tool: "WaitForArrival",
+        kind: "wait",
+        detail: `${id}: ${arrived ? "arrived" : "timeout"} (${last})`,
+      });
+      // Arrival is informational; a timeout never aborts the plan.
       continue;
     }
 

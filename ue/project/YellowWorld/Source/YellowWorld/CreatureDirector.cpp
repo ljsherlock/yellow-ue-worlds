@@ -19,6 +19,21 @@ namespace
 			GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Green, Msg);
 		}
 	}
+
+	/** One creature as a compact JSON object. Ids/types/states are simple tokens
+	 *  (no embedded quotes), so a printf-built string is safe and dependency-free. */
+	FString DescribeCreature(const FString& Id, const ASceneCreature* C)
+	{
+		const FVector L = C->GetActorLocation();
+		return FString::Printf(
+			TEXT("{\"id\":\"%s\",\"type\":\"%s\",\"state\":\"%s\",")
+			TEXT("\"x\":%.1f,\"y\":%.1f,\"z\":%.1f,\"speed\":%.1f,")
+			TEXT("\"arrived\":%s,\"atWater\":%s}"),
+			*Id, *C->CreatureType.ToString(), *C->CurrentState.ToString(),
+			L.X, L.Y, L.Z, C->CurrentSpeed,
+			C->bArrived ? TEXT("true") : TEXT("false"),
+			C->bAtWater ? TEXT("true") : TEXT("false"));
+	}
 }
 
 ACreatureDirector::ACreatureDirector()
@@ -285,6 +300,36 @@ void ACreatureDirector::ListCreatures()
 				*Pair.Value->CurrentState.ToString()));
 		}
 	}
+}
+
+FString ACreatureDirector::QueryCreatures()
+{
+	FString Out = TEXT("[");
+	bool bFirst = true;
+	for (const TPair<FName, TObjectPtr<ASceneCreature>>& Pair : Creatures)
+	{
+		if (!Pair.Value)
+		{
+			continue;
+		}
+		if (!bFirst)
+		{
+			Out += TEXT(",");
+		}
+		Out += DescribeCreature(Pair.Key.ToString(), Pair.Value);
+		bFirst = false;
+	}
+	Out += TEXT("]");
+	return Out;
+}
+
+FString ACreatureDirector::QueryCreature(const FString& Id)
+{
+	if (const ASceneCreature* C = Find(Id))
+	{
+		return DescribeCreature(Id, C);
+	}
+	return TEXT("{}");
 }
 
 void ACreatureDirector::SetWaterLevel(float SurfaceZ)

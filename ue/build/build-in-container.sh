@@ -118,8 +118,14 @@ if [[ "${SKIP_MAKE_MAP:-0}" == "1" ]]; then
     # (synchronous) save, so we poll the log for the save marker and then kill it
     # rather than waiting on a clean QUIT_EDITOR.
     $DOCKER exec -d \
-      -e MAP="$MAP" -e WATER_X -e WATER_Y -e WATER_Z -e WATER_R \
-      -e WATER_CARVE -e SPAWN_OVER_LAKE -e SPAWN_HEIGHT -e SPAWN_PITCH \
+      -e MAP="$MAP" -e WATER_X -e WATER_Y -e WATER_Z -e WATER_R -e LAKES \
+      -e WATER_CARVE -e SNAP_TO_GROUND -e WATER_DEPTH -e BASIN_GRID -e RIM_MARGIN \
+      -e WATER_FALLOFF_MODE -e WATER_FALLOFF_ANGLE -e WATER_FALLOFF_WIDTH \
+      -e WATER_CARVE_ZOFFSET -e WATER_CARVE_EDGE \
+      -e WATER_TINT -e WATER_SCATTER -e WATER_ABSORB -e WATER_ALBEDO \
+      -e WATER_ROUGHNESS -e WATER_SPECULAR -e WATER_SHAPE_AMP -e WATER_RIPPLE_SCALE \
+      -e WATER_CALM -e WATER_WAVE_SCALE \
+      -e SPAWN_OVER_LAKE -e SPAWN_HEIGHT -e SPAWN_PITCH -e SPAWN_LAKE_INDEX \
       --workdir / "$CONTAINER" bash -lc \
       "xvfb-run -a -s '-screen 0 320x240x24' '$ENGINE/Engine/Binaries/Linux/UnrealEditor' \
         /project/YellowWorld.uproject \
@@ -163,6 +169,17 @@ if [[ "${SKIP_MAKE_MAP:-0}" == "1" ]]; then
       "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
       /project/YellowWorld.uproject \
       -run=pythonscript -script=/project/Scripts/add_creatures.py \
+      -unattended -nullrhi -nosplash -nopause
+  elif [[ "${ADD_WORLDDIRECTOR:-0}" == "1" ]]; then
+    # Bake an AWorldDirector into the map so RC can drive atmosphere/sky/time on
+    # an imported pack (which ships sun/sky but no director). Plain AActor — no
+    # Slate, so -nullrhi is fine. Preserves all existing actors (incl. a
+    # previously-authored CreatureDirector + water). Director path is logged.
+    echo "[2wd/3] Authoring WorldDirector into $MAP (add_worlddirector.py, -nullrhi) ..."
+    $DOCKER exec -i -e MAP="$MAP" --workdir / "$CONTAINER" \
+      "$ENGINE/Engine/Binaries/Linux/UnrealEditor-Cmd" \
+      /project/YellowWorld.uproject \
+      -run=pythonscript -script=/project/Scripts/add_worlddirector.py \
       -unattended -nullrhi -nosplash -nopause
   elif [[ "${CENTER_START:-1}" != "0" ]]; then
     # Imported packs spawn the pawn at the map edge / origin. Re-centre the

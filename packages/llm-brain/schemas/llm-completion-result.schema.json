@@ -439,6 +439,40 @@
               "args"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "WaitForArrival"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "timeout_seconds": {
+                    "default": 120,
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 600
+                  }
+                },
+                "required": [
+                  "id",
+                  "timeout_seconds"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
           }
         ]
       }
