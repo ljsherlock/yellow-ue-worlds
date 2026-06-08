@@ -45,6 +45,19 @@ if [[ "$SPOT" == "true" ]]; then
   flags+=(--provisioning-model=SPOT --instance-termination-action=STOP)
 fi
 
+# Reserve a stable external IP so the public address survives stop/start and
+# destroy/recreate (ephemeral IPs change on every start, which breaks DNS/TLS).
+# Idempotent: reuse the reservation if it already exists. The instance is then
+# pinned to it via --address below.
+ADDR_NAME="${INSTANCE}-ip"
+REGION="${ZONE%-*}"
+if ! gcloud compute addresses describe "$ADDR_NAME" --region="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
+  echo "Reserving static IP '$ADDR_NAME' in $REGION ..."
+  gcloud compute addresses create "$ADDR_NAME" --region="$REGION" --project="$PROJECT"
+fi
+STATIC_IP=$(gcloud compute addresses describe "$ADDR_NAME" --region="$REGION" --project="$PROJECT" --format='get(address)')
+echo "Static IP ($ADDR_NAME): $STATIC_IP"
+
 echo "Creating $INSTANCE ($MACHINE = $GPU_DESC) in $ZONE of project $PROJECT ..."
 gcloud compute instances create "$INSTANCE" \
   --project="$PROJECT" \
@@ -54,6 +67,7 @@ gcloud compute instances create "$INSTANCE" \
   --image-project="$IMAGE_PROJECT" \
   --boot-disk-size="${DISK_GB}GB" \
   --boot-disk-type=pd-ssd \
+  --address="$STATIC_IP" \
   --metadata-from-file=startup-script="$HERE/startup.sh" \
   --tags=pixelstreaming \
   "${flags[@]}"

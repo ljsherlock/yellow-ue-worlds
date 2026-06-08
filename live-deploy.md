@@ -3,17 +3,18 @@
 Free-form prompt control (option B: LLM brain) + public domain for the savanna stream.
 Decisions to confirm: domain/registrar, LLM provider (Gemini already wired vs OpenAI/Anthropic), Caddy as TLS proxy.
 
-## Reserve a static external IP
+## Reserve a static external IP — DONE
 
-Reserve a GCP address and attach it in `provision-l4.sh` (`--address`) so the public IP survives stop/start. Trivial cost vs the GPU VM; removes IP churn.
+Static IP `35.232.241.32` (reservation `ue-pixelspike-ip`, region `us-central1`) attached to the VM and baked into `provision-l4.sh` (`--address`) so it survives stop/start and recreate. The domain A record points here.
 
-## Point a domain at the IP
+## Point a domain at the IP — DONE
 
-DNS A record `stream.<domain>` → the static IP. Clients only ever use the domain + relative paths, so the IP can change underneath without app changes.
+`3dworld.helloyellow.ai` A record → `35.232.241.32` (DNS at Namecheap), verified resolving via Google/Cloudflare. Clients use the domain + relative paths, so the IP can change underneath without app changes.
 
-## TLS reverse proxy (Caddy)
+## TLS reverse proxy (Caddy) — DONE
 
-Run Caddy on :443 (auto Let's Encrypt). Route `/` + `wss` → SignallingWebServer :80, `/api/brain/*` → brain :8000. Firewall already allows 80/443.
+Caddy v2.11.4 on the VM, config in `ue/run/Caddyfile` (deployed to `/etc/caddy/Caddyfile`). Valid Let's Encrypt cert for `3dworld.helloyellow.ai` (TLS-ALPN-01, auto-renew to Sep 2026). Binds 443 only; `http_port 8081` keeps :80 free for the signalling server; `reverse_proxy 127.0.0.1:80`. Returns 502 until the stream is up (expected). `/api/brain/*` route added with tasks 4-6.
+Follow-up: Caddy was installed by hand — fold the install into `gcp/startup.sh` so it survives a VM recreate.
 
 ## Run the brain as a service on the VM
 
