@@ -163,9 +163,12 @@ slow motivation + fast reflex), with the **LLM authoring all the content**.
   `SendPixelStreaming2Response`. Deploy via `deploy_frontend.sh`.
 - [x] **Demo mode** — `demo_herd.sh` + `run-stream.sh` `DEMO=1`; seeds drives from
   the scene (staggered thirst → procession to water); follow-cam on `a01`.
-- [x] **Creature collision** — capsule root + `ResolveCreatureOverlaps()` planar
-  depenetration each tick (kinematic pawn sweeps miss same-frame); half-step jam
-  retreat in `TryMoveTo`. **Needs cook** after C++ change (2026-06-05).
+- [x] **Creature locomotion** — `ACharacter` + `UCharacterMovementComponent`
+  (UE swept movement, terrain + pawn blocking). Replaces kinematic lerp (2026-06-05).
+- [x] **Camp lake + water colour** — visual lake at `(445000,626000)`; default
+  `WATER_TINT=0` restores raw UE water material.
+- [x] **Stream camera UI** — PS overlay: free fly / follow / overview + per-creature
+  follow via `emitUIInteraction` → `AStreamBridge`.
 
 **Still open** (original full ecosystem scope):
 

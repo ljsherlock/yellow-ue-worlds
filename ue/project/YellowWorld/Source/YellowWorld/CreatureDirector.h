@@ -27,6 +27,16 @@ class YELLOWWORLD_API ACreatureDirector : public AActor
 public:
 	ACreatureDirector();
 
+	virtual void BeginPlay() override;
+
+	/** Bind the herd's drink target to the authored WaterBodyLake (the actor the
+	 *  build tags "yellow_water_lake") instead of a hand-set disc: reads the
+	 *  lake's centre, surface Z and planar extent and feeds them into
+	 *  SetWaterSource. Auto-called at BeginPlay and re-callable over RC so the
+	 *  AI water always matches the visible lake. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Yellow|Creatures")
+	void BindWaterToLake();
+
 	/** Species catalog: row name == creature type. Assigned in-editor or by the
 	 *  authoring script once a pack (e.g. the elephant) is imported. Optional —
 	 *  DefineCreatureType can register types at runtime instead. */
@@ -170,4 +180,9 @@ private:
 	ASceneCreature* Find(const FString& Id) const;
 	float GroundZAt(float X, float Y) const;
 	const FCreatureDef* ResolveDef(const FName& Type) const;
+
+	/** If (X,Y) sits in/under the bound lake, march radially out from the lake
+	 *  centre to the first dry ground above the surface and return it; otherwise
+	 *  return (X,Y, GroundZAt). Keeps spawns on the shore, never on the lakebed. */
+	FVector ResolveDrySpawn(float X, float Y) const;
 };

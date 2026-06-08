@@ -17,6 +17,10 @@ public class YellowWorld : ModuleRules
 		// Remote Control is enabled as a plugin (see YellowWorld.uproject) and
 		// activated at runtime with -RCWebControlEnable; the WorldDirector only
 		// needs engine types, so no extra private deps are required yet.
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"Json",
+			"JsonUtilities",
+		});
 	}
 }

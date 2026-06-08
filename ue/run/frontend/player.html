@@ -2,8 +2,9 @@
      Based on Epic's `uiless` sample (core library only, so NO default Pixel
      Streaming UI), with a small top-right "drives" panel fed by the engine over
      the data channel (UPixelStreaming2Input::SendPixelStreaming2Response ->
-     PixelStreaming.addResponseEventListener). Deployed to the VM's
-     SignallingWebServer/www by ue/run/deploy_frontend.sh. -->
+     PixelStreaming.addResponseEventListener). Camera commands go the other way
+     via emitUIInteraction -> StreamBridge -> CreatureDirector. Deployed to the
+     VM's SignallingWebServer/www by ue/run/deploy_frontend.sh. -->
 <!DOCTYPE HTML>
 <html style="width: 100%; height: 100%">
 <head>
@@ -19,6 +20,7 @@
             --hy-muted: #9aa3ad;
             --hy-thirst: #4ca3ff;
             --hy-fatigue: #ffb454;
+            --hy-accent: #f5d547;
         }
         html, body { margin: 0; padding: 0; }
         body { font-family: 'Montserrat', system-ui, sans-serif; background: #000; }
@@ -32,7 +34,6 @@
             display: none; background: rgba(0,0,0,0.4); z-index: 20;
         }
 
-        /* Small drives panel, top-right. */
         #drivesPanel {
             position: fixed; top: 14px; right: 14px; z-index: 10;
             width: 268px; max-height: calc(100vh - 28px);
@@ -49,10 +50,14 @@
         }
         .hy-title { font-weight: 700; font-size: 13px; letter-spacing: 0.02em; }
         .hy-sub { color: var(--hy-muted); font-weight: 500; margin-top: 3px; font-size: 11px; }
-        .hy-rows { overflow-y: auto; padding: 6px 0; }
+        .hy-rows { overflow-y: auto; padding: 6px 0; flex: 1; }
         .hy-rows::-webkit-scrollbar { width: 8px; }
         .hy-rows::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 8px; }
-        .hy-row { padding: 7px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        .hy-row {
+            padding: 7px 14px; border-bottom: 1px solid rgba(255,255,255,0.04);
+            cursor: pointer; transition: background 0.15s ease;
+        }
+        .hy-row:hover { background: rgba(255,255,255,0.05); }
         .hy-row:last-child { border-bottom: none; }
         .hy-rtop { display: flex; justify-content: space-between; align-items: baseline; }
         .hy-id { font-weight: 600; }
@@ -61,6 +66,37 @@
         .hy-bar { height: 5px; border-radius: 4px; background: rgba(255,255,255,0.10); margin-top: 5px; overflow: hidden; }
         .hy-bar > span { display: block; height: 100%; border-radius: 4px; }
         .hy-barlabels { display: flex; justify-content: space-between; color: var(--hy-muted); margin-top: 4px; font-size: 10px; }
+
+        #cameraBar {
+            position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+            z-index: 10; display: flex; gap: 8px; align-items: center;
+            padding: 10px 12px; border-radius: 14px;
+            background: var(--hy-bg); border: 1px solid var(--hy-edge);
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+            opacity: 0; transition: opacity 0.4s ease;
+        }
+        #cameraBar.ready { opacity: 1; }
+        .hy-cam-label {
+            color: var(--hy-muted); font-size: 10px; font-weight: 600;
+            letter-spacing: 0.06em; text-transform: uppercase; margin-right: 4px;
+        }
+        .hy-btn {
+            appearance: none; border: 1px solid var(--hy-edge); background: rgba(255,255,255,0.06);
+            color: var(--hy-text); font-family: inherit; font-size: 11px; font-weight: 600;
+            padding: 8px 12px; border-radius: 9px; cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .hy-btn:hover { background: rgba(255,255,255,0.12); }
+        .hy-btn.active {
+            background: rgba(245, 213, 71, 0.18); border-color: rgba(245, 213, 71, 0.45);
+            color: var(--hy-accent);
+        }
+        .hy-select {
+            appearance: none; border: 1px solid var(--hy-edge); background: rgba(255,255,255,0.06);
+            color: var(--hy-text); font-family: inherit; font-size: 11px; font-weight: 600;
+            padding: 8px 10px; border-radius: 9px; cursor: pointer;
+        }
     </style>
 </head>
 
@@ -74,6 +110,16 @@
             <div class="hy-sub" id="hySummary">waiting for herd…</div>
         </div>
         <div class="hy-rows" id="hyRows"></div>
+    </div>
+
+    <div id="cameraBar">
+        <span class="hy-cam-label">Camera</span>
+        <button type="button" class="hy-btn" id="btnFreeFly" data-mode="free">Free fly</button>
+        <button type="button" class="hy-btn active" id="btnFollowLead" data-mode="follow" data-id="a01">Follow a01</button>
+        <button type="button" class="hy-btn" id="btnOverview" data-mode="overview">Herd overview</button>
+        <select class="hy-select" id="followSelect" title="Follow another elephant">
+            <option value="">Follow…</option>
+        </select>
     </div>
 </body>
 </html>

@@ -3,6 +3,7 @@
 #include "SceneCreature.h"
 #include "FlyPawn.h"
 #include "CreatureDef.h"
+#include "Components/CapsuleComponent.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
@@ -44,6 +45,94 @@ namespace
 ACreatureDirector::ACreatureDirector()
 {
 	PrimaryActorTick.bCanEverTick = false;
+}
+
+void ACreatureDirector::BeginPlay()
+{
+	Super::BeginPlay();
+	// Bind the drink target to the real lake before any creatures spawn, so the
+	// shore-spawn guard and the thirst logic both see the authored geometry.
+	BindWaterToLake();
+}
+
+void ACreatureDirector::BindWaterToLake()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	TArray<AActor*> Found;
+	UGameplayStatics::GetAllActorsWithTag(this, FName(TEXT("yellow_water_lake")), Found);
+	if (Found.Num() == 0)
+	{
+		Notify(TEXT("BindWaterToLake: no actor tagged 'yellow_water_lake' in level"));
+		return;
+	}
+
+	// If several lakes exist, take the one whose footprint is largest (the
+	// primary basin) — that is the one the herd should treat as "the lake".
+	float BestRadius = 0.f;
+	FVector BestCenter = FVector::ZeroVector;
+	for (AActor* A : Found)
+	{
+		if (!A) { continue; }
+		FVector Origin, Extent;
+		A->GetActorBounds(false, Origin, Extent);
+		const float R = FMath::Max(Extent.X, Extent.Y);
+		if (R > BestRadius)
+		{
+			BestRadius = R;
+			BestCenter = A->GetActorLocation();
+		}
+	}
+
+	if (BestRadius <= 0.f)
+	{
+		Notify(TEXT("BindWaterToLake: lake has zero bounds — ignoring"));
+		return;
+	}
+
+	// SetWaterSource records centre/surface/radius and pushes them to every live
+	// + future creature (it also sets the shoreline stop height).
+	SetWaterSource(BestCenter.X, BestCenter.Y, BestCenter.Z, BestRadius);
+	Notify(FString::Printf(
+		TEXT("BindWaterToLake -> centre (%.0f,%.0f) surfaceZ %.0f radius %.0f"),
+		BestCenter.X, BestCenter.Y, BestCenter.Z, BestRadius));
+}
+
+FVector ACreatureDirector::ResolveDrySpawn(float X, float Y) const
+{
+	const float Z = GroundZAt(X, Y);
+
+	// No bound lake, or the point is already dry land above the surface: keep it.
+	if (!bHaveWaterSource || Z >= SceneWaterZ + 150.f)
+	{
+		return FVector(X, Y, Z);
+	}
+
+	// The requested point is in/under the lake. Walk straight out from the lake
+	// centre along the requested bearing until the ground climbs above the water
+	// surface — that's the shore at this angle.
+	FVector2D Dir(X - SceneWaterSource.X, Y - SceneWaterSource.Y);
+	float March = Dir.Size();
+	Dir = Dir.IsNearlyZero() ? FVector2D(1.f, 0.f) : Dir.GetSafeNormal();
+	for (int32 Step = 0; Step < 160; ++Step)
+	{
+		March += 1000.f;
+		const float TX = SceneWaterSource.X + Dir.X * March;
+		const float TY = SceneWaterSource.Y + Dir.Y * March;
+		const float TZ = GroundZAt(TX, TY);
+		if (TZ >= SceneWaterZ + 150.f)
+		{
+			return FVector(TX, TY, TZ);
+		}
+	}
+
+	// Fell through (no dry ground found within range): spawn at the original
+	// point's ground anyway rather than dropping the creature into the void.
+	return FVector(X, Y, Z);
 }
 
 ASceneCreature* ACreatureDirector::Find(const FString& Id) const
@@ -135,11 +224,24 @@ void ACreatureDirector::SpawnCreature(const FString& Type, const FString& Id, fl
 		DespawnCreature(Id);
 	}
 
-	const float Z = GroundZAt(X, Y);
+	// Keep the creature out of the water: if the requested point is on the
+	// lakebed, this returns the nearest dry shore at the same bearing.
+	const FVector Ground = ResolveDrySpawn(X, Y);
+	X = Ground.X;
+	Y = Ground.Y;
+	const float Z = Ground.Z;
 	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+	// Spawn with the capsule BOTTOM on the ground (actor origin = ground + half
+	// height) so CharacterMovement doesn't have to depenetrate a creature that
+	// started buried in the landscape (which spams "stuck and failed to move").
+	const float SpawnHalfHeight =
+		ASceneCreature::StaticClass()->GetDefaultObject<ASceneCreature>()
+			->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 	ASceneCreature* Creature = World->SpawnActor<ASceneCreature>(
-		ASceneCreature::StaticClass(), FVector(X, Y, Z), FRotator(0.f, Yaw, 0.f), SpawnParams);
+		ASceneCreature::StaticClass(), FVector(X, Y, Z + SpawnHalfHeight),
+		FRotator(0.f, Yaw, 0.f), SpawnParams);
 	if (!Creature)
 	{
 		Notify(FString::Printf(TEXT("SpawnCreature '%s' FAILED"), *Id));
@@ -154,6 +256,10 @@ void ACreatureDirector::SpawnCreature(const FString& Type, const FString& Id, fl
 	if (Def)
 	{
 		Creature->ApplyDef(*Def);
+		// ApplyDef may rescale the capsule; re-seat the capsule bottom on the
+		// ground for the (possibly) new half-height.
+		const float ScaledHalf = Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		Creature->SetActorLocation(FVector(X, Y, Z + ScaledHalf));
 	}
 	if (bHaveWaterZ)
 	{

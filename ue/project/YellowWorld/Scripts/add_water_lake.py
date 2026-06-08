@@ -43,9 +43,14 @@ SPLINE_POINTS = 28
 # only fallbacks for when ground-snapping is disabled.
 LARGE_LAKE_RADIUS = 130000.0          # cm; the original interior lake radius
 LAKE_RADIUS = 0.20 * LARGE_LAKE_RADIUS  # 26000 cm = 20% of the large lake
+# Interior basin lake at (479552,625856) — a real terrain depression, so it
+# reads as a proper lake once SNAP_TO_GROUND fills the basin floor (no Edit-Layer
+# carving needed, which we can't toggle headless anyway). The herd spawns on its
+# shore (CreatureDirector pushes any underwater spawn out to dry ground) and the
+# drink target is read back from this actor's geometry at runtime
+# (CreatureDirector::BindWaterToLake), so the AI water matches what's visible.
 DEFAULT_LAKES = [
-    (120000.0, 160000.0, -8700.0, LAKE_RADIUS),   # SW watering hole
-    (479552.0, 625856.0, -6000.0, LAKE_RADIUS),   # interior basin (primary target)
+    (479552.0, 625856.0, -6000.0, LAKE_RADIUS),
 ]
 
 
@@ -516,7 +521,7 @@ def _color_env(name, r, g, b):
 
 
 def _apply_savannah_water(comp):
-    if os.environ.get("WATER_TINT", "1").strip() != "1" or comp is None:
+    if os.environ.get("WATER_TINT", "0").strip() != "1" or comp is None:
         return
     parent = None
     slots = ("water_material", "water_static_mesh_material", "water_lod_material")

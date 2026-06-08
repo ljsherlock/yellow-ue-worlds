@@ -131,13 +131,27 @@ if [[ "${SKIP_MAKE_MAP:-0}" == "1" ]]; then
         /project/YellowWorld.uproject \
         -ExecCmds='t.MaxFPS 8, py /project/Scripts/add_water_lake.py' \
         -norhithread -unattended -nosplash -nopause -ResX=320 -ResY=240 -stdout \
-        > /tmp/water-author.log 2>&1"
+        > /project/water-author.log 2>&1"
+    # Log is written to the bind-mounted /project so it persists on the host even
+    # after the container is torn down (debuggable post-mortem). The abort grep is
+    # deliberately narrow: only a genuine engine-fatal aborts. The Fab/CEF embedded
+    # browser GPU subprocess dies with "exit code 21" / its own signal in headless
+    # containers — that is HARMLESS to the commandlet, so we must NOT treat generic
+    # "Signal 11" noise as a build failure (it was false-aborting before the save).
     water_ok=0
-    for _ in $(seq 1 120); do   # up to ~20 min for a cold-DDC first author
-      if $DOCKER exec "$CONTAINER" bash -lc 'grep -aq "\[water\] saved" /tmp/water-author.log 2>/dev/null'; then
+    for _ in $(seq 1 180); do   # up to ~30 min for a cold-DDC first author
+      if $DOCKER exec "$CONTAINER" bash -lc 'grep -aq "\[water\] saved" /project/water-author.log 2>/dev/null'; then
         water_ok=1; break
       fi
-      if $DOCKER exec "$CONTAINER" bash -lc 'grep -aqE "Fatal error|Signal 1[12]|appError" /tmp/water-author.log 2>/dev/null'; then
+      if $DOCKER exec "$CONTAINER" bash -lc 'grep -aqE "Fatal error:|appError|save_current_level failed" /project/water-author.log 2>/dev/null'; then
+        echo "[2w/3] editor logged a fatal — aborting. Tail:"
+        $DOCKER exec "$CONTAINER" bash -lc 'tail -40 /project/water-author.log' || true
+        break
+      fi
+      if ! $DOCKER exec "$CONTAINER" bash -lc 'pgrep -f "Binaries/Linux/UnrealEditor" >/dev/null 2>&1'; then
+        # Editor process gone without a save marker: it crashed/exited early.
+        echo "[2w/3] editor exited before save marker — crash. Tail:"
+        $DOCKER exec "$CONTAINER" bash -lc 'tail -40 /project/water-author.log' || true
         break
       fi
       sleep 10
@@ -155,7 +169,7 @@ if [[ "${SKIP_MAKE_MAP:-0}" == "1" ]]; then
       fi
     else
       echo "ERROR: water authoring did not reach save — aborting before cook. Tail:"
-      $DOCKER exec "$CONTAINER" bash -lc 'tail -30 /tmp/water-author.log' || true
+      $DOCKER exec "$CONTAINER" bash -lc 'tail -30 /project/water-author.log' || true
       exit 1
     fi
   elif [[ "${ADD_CREATURES:-0}" == "1" ]]; then

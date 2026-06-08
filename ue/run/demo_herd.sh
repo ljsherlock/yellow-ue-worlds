@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Demo mode: on first load, populate the savanna with a herd of elephants —
-# 20 adults + 3 calves — on the flat camp shelf (water source colocated). No explicit
+# 20 adults + 3 calves — on the shore of the interior basin lake. No explicit
 # choreography: each adult is autonomous, so the cooked drive/utility layer runs
 # the show (graze near home, walk to the water when thirsty, drink, repeat). The
 # calves trail three of the adults. The herd's *initial* thirst is seeded here so
@@ -25,20 +25,13 @@ run=/Game/Elephant/Animations/Ele_IP_Run_Forward.Ele_IP_Run_Forward;\
 drink=/Game/Elephant/Animations/Ele_C_Drink.Ele_C_Drink"
 YAW_OFF="${YAW_OFF:--90}"
 
-# Herd home: flat checkered camp shelf (terrain-probed z~-5590). Follow-cam frames
-# this area; thirsty elephants should not be sent down the basin cliff to lake2.
-HOME_X="${HOME_X:-445000}"
-HOME_Y="${HOME_Y:-626000}"
-
-# Water source colocated with the camp — a small pool around home, not lake2.
-# SetWaterSource(X,Y,Z,Radius) sets where thirsty creatures drink AND the
-# shoreline-stop level. Z must be BELOW the camp ground (~-5590) or every graze
-# step falsely reads as "atWater" and the herd jitters side-to-side. Thirsty
-# elephants walk to the pool rim and drink on path arrival instead.
-WATER_X="${WATER_X:-$HOME_X}"
-WATER_Y="${WATER_Y:-$HOME_Y}"
-WATER_Z="${WATER_Z:--5920}"
-WATER_R="${WATER_R:-6000}"
+# Herd home: the interior basin lake centre (479552,625856). The spiral below
+# spawns around this point; CreatureDirector pushes any spawn that lands in the
+# water straight out to the dry shore, so the herd rings the lake bank instead of
+# the lakebed. The drink target is bound from the lake's own geometry at runtime
+# (see BindWaterToLake), so there is no manual water disc here any more.
+HOME_X="${HOME_X:-479552}"
+HOME_Y="${HOME_Y:-625856}"
 
 ADULTS="${ADULTS:-20}"
 CALVES="${CALVES:-3}"
@@ -58,8 +51,11 @@ echo "[demo] clearing any prior creatures + releasing follow-cam"
 call ClearCreatures "{}"
 call StopFocus "{}"
 
-echo "[demo] water source = camp pool ($WATER_X,$WATER_Y,$WATER_Z) r=$WATER_R"
-call SetWaterSource "{\"X\":$WATER_X,\"Y\":$WATER_Y,\"SurfaceZ\":$WATER_Z,\"Radius\":$WATER_R}"
+# Drink target = the actual WaterBodyLake geometry (tagged 'yellow_water_lake').
+# The director auto-binds this at BeginPlay; re-call here so a manual demo re-run
+# (after the level is already live) re-reads the lake too. No hand-set disc.
+echo "[demo] binding water source to the authored lake geometry"
+call BindWaterToLake "{}"
 
 echo "[demo] spawning $ADULTS adults around home ($HOME_X,$HOME_Y)"
 for i in $(seq 1 "$ADULTS"); do
@@ -89,9 +85,17 @@ for j in $(seq 1 "$CALVES"); do
   call SetCreatureLeader "{\"Id\":\"$ID\",\"LeaderId\":\"$LEADER\",\"Distance\":400}"
 done
 
-echo "[demo] follow-cam on a01 (default demo framing)"
-sleep 2
-call FocusCamera "{\"Id\":\"a01\"}"
+# Start in free-fly on the default pawn (manual WASD/mouse). The camera buttons
+# are being revisited, so we no longer force a follow-cam at boot. Set
+# DEMO_FOCUS=a01 (or any id) to auto-follow on load instead.
+if [[ -n "${DEMO_FOCUS:-}" ]]; then
+  echo "[demo] follow-cam on ${DEMO_FOCUS}"
+  sleep 2
+  call FocusCamera "{\"Id\":\"${DEMO_FOCUS}\"}"
+else
+  echo "[demo] default pawn free-fly (no follow-cam; set DEMO_FOCUS=a01 to override)"
+  call StopFocus "{}"
+fi
 
 echo "[demo] herd live: $ADULTS adults + $CALVES calves. Grazing first, then drinking."
 echo "[demo] RC: FocusCamera {\"Id\":\"a01\"} follow · FocusHerdOverview wide · StopFocus free-fly"

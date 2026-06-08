@@ -2,40 +2,106 @@
 
 #include "CreatureDirector.h"
 #include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimSequenceBase.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/World.h"
 #include "CollisionQueryParams.h"
-#include "Engine/OverlapResult.h"
-#include "EngineUtils.h"
 #include "Math/NumericLimits.h"
 
 namespace
 {
-	constexpr float kTraceHalfRange = 100000.f; // 1 km up/down — covers the 8 km savanna's relief
+	constexpr float kTraceHalfRange = 100000.f;
 }
 
-ASceneCreature::ASceneCreature()
+ASceneCreature::ASceneCreature(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Capsule root blocks other creatures; mesh stays visual-only. Landscape
-	// collision is ignored — we still line-trace for ground height.
-	Capsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("Capsule"));
-	SetRootComponent(Capsule);
-	Capsule->InitCapsuleSize(200.f, 380.f);
-	Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	Capsule->SetCollisionObjectType(ECC_Pawn);
-	Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-	Capsule->SetGenerateOverlapEvents(false);
-	Capsule->SetMobility(EComponentMobility::Movable);
+	UCapsuleComponent* Cap = GetCapsuleComponent();
+	Cap->InitCapsuleSize(200.f, 380.f);
+	Cap->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	Cap->SetCollisionObjectType(ECC_Pawn);
+	Cap->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Cap->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	Cap->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	Cap->SetGenerateOverlapEvents(false);
 
-	Mesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
-	Mesh->SetupAttachment(Capsule);
-	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// CharacterMovement rests the capsule BOTTOM on the floor, so the actor
+	// origin sits one half-height above the ground. The skeletal mesh pivots at
+	// the creature's feet, so drop it by the (unscaled) half-height to plant the
+	// feet on the ground instead of floating at the capsule centre. Scales with
+	// the actor, so it stays grounded at any UniformScale.
+	GetMesh()->SetupAttachment(Cap);
+	GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -Cap->GetUnscaledCapsuleHalfHeight()));
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	ConfigureMovement();
+}
+
+void ASceneCreature::ConfigureMovement()
+{
+	UCharacterMovementComponent* Move = GetCharacterMovement();
+	if (!Move)
+	{
+		return;
+	}
+	Move->bOrientRotationToMovement = true;
+	Move->RotationRate = FRotator(0.f, TurnSpeedDeg, 0.f);
+	Move->MaxWalkSpeed = WalkSpeed;
+	Move->BrakingDecelerationWalking = 1200.f;
+	Move->GroundFriction = 8.f;
+	Move->MaxStepHeight = 60.f;
+	Move->SetWalkableFloorAngle(50.f);
+	Move->bUseControllerDesiredRotation = false;
+	Move->bRunPhysicsWithNoController = true;
+
+	// RVO avoidance: creatures steer AROUND a blocker instead of marching into
+	// it and "walking in place". Everyone is in (and avoids) group 1, so the
+	// herd treats each other as obstacles. ConsiderationRadius is generous
+	// because the capsules are large (200cm radius) — they need to start
+	// veering well before contact. The hard capsule block stays as the backstop
+	// for the cases avoidance can't resolve in time.
+	Move->bUseRVOAvoidance = true;
+	Move->AvoidanceConsiderationRadius = 1500.f;
+	Move->AvoidanceWeight = 0.5f;
+	Move->SetAvoidanceGroup(1);
+	Move->SetGroupsToAvoid(1);
+}
+
+void ASceneCreature::StopLocomotion()
+{
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Move->StopMovementImmediately();
+	}
+	CurrentSpeed = 0.f;
+}
+
+void ASceneCreature::SteerToward(const FVector& Goal, float Speed)
+{
+	UCharacterMovementComponent* Move = GetCharacterMovement();
+	if (!Move)
+	{
+		return;
+	}
+
+	Move->bOrientRotationToMovement = true;
+	Move->MaxWalkSpeed = FMath::Max(Speed, 1.f);
+
+	FVector ToGoal = Goal - GetActorLocation();
+	ToGoal.Z = 0.f;
+	if (ToGoal.IsNearlyZero())
+	{
+		StopLocomotion();
+		return;
+	}
+
+	AddMovementInput(ToGoal.GetSafeNormal(), 1.f);
+	CurrentSpeed = GetVelocity().Size2D();
 }
 
 void ASceneCreature::ApplyDef(const FCreatureDef& Def)
@@ -43,6 +109,13 @@ void ASceneCreature::ApplyDef(const FCreatureDef& Def)
 	WalkSpeed = Def.WalkSpeed > 0.f ? Def.WalkSpeed : WalkSpeed;
 	RunSpeed = Def.RunSpeed > 0.f ? Def.RunSpeed : RunSpeed;
 	MeshYawOffset = Def.MeshYawOffset;
+	// CharacterMovement orients the ACTOR (capsule) to the velocity/target
+	// direction. The skeletal mesh art rarely faces +X, so carry the art's yaw
+	// correction on the MESH itself; the actor then always faces true heading and
+	// the mesh's head points forward. (Previously MeshYawOffset was folded into
+	// the actor rotation, which CMC's bOrientRotationToMovement now overrides —
+	// leaving the herd crabbing sideways.)
+	GetMesh()->SetRelativeRotation(FRotator(0.f, MeshYawOffset, 0.f));
 	if (Def.UniformScale > 0.f)
 	{
 		SetActorScale3D(FVector(Def.UniformScale));
@@ -50,7 +123,7 @@ void ASceneCreature::ApplyDef(const FCreatureDef& Def)
 
 	if (USkeletalMesh* SM = Def.Mesh.LoadSynchronous())
 	{
-		Mesh->SetSkeletalMeshAsset(SM);
+		GetMesh()->SetSkeletalMeshAsset(SM);
 	}
 
 	Clips.Reset();
@@ -64,7 +137,7 @@ void ASceneCreature::ApplyDef(const FCreatureDef& Def)
 
 	if (UClass* AnimCls = Def.AnimClass.LoadSynchronous())
 	{
-		Mesh->SetAnimInstanceClass(AnimCls);
+		GetMesh()->SetAnimInstanceClass(AnimCls);
 		bUsingAnimBP = true;
 	}
 	else
@@ -72,9 +145,12 @@ void ASceneCreature::ApplyDef(const FCreatureDef& Def)
 		bUsingAnimBP = false;
 		PlayClip(TEXT("idle"), true);
 	}
-}
 
-// --- behaviour API ----------------------------------------------------------
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Move->MaxWalkSpeed = WalkSpeed;
+	}
+}
 
 void ASceneCreature::MoveTo(const FVector& World, float Speed)
 {
@@ -111,12 +187,11 @@ void ASceneCreature::SetStateName(FName State)
 	const bool bLocomotion = (State == TEXT("walk") || State == TEXT("run") || State == TEXT("idle"));
 	if (!bLocomotion)
 	{
-		// An action (drink/graze/...) is performed in place — stop travelling.
 		bHasTarget = false;
 		bWander = false;
 		Path.Reset();
 		PathIndex = 0;
-		CurrentSpeed = 0.f;
+		StopLocomotion();
 	}
 	CurrentState = State;
 	PlayClip(State, true);
@@ -149,22 +224,21 @@ void ASceneCreature::SetWaterSource(const FVector& Location, float Radius)
 	WaterSource = Location;
 	WaterSourceRadius = FMath::Max(Radius, 100.f);
 	bHaveWaterSource = true;
-	// The source's Z doubles as the shoreline-stop level.
 	bAvoidWater = true;
 	WaterZ = Location.Z;
 }
 
 void ASceneCreature::PlayClip(FName StateKey, bool bLoop)
 {
-	if (bUsingAnimBP || !Mesh)
+	if (bUsingAnimBP || !GetMesh())
 	{
-		return; // AnimBP drives itself from CurrentState/CurrentSpeed
+		return;
 	}
 	if (TObjectPtr<UAnimSequenceBase>* Found = Clips.Find(StateKey))
 	{
 		if (*Found)
 		{
-			Mesh->PlayAnimation(*Found, bLoop);
+			GetMesh()->PlayAnimation(*Found, bLoop);
 		}
 	}
 }
@@ -206,25 +280,11 @@ void ASceneCreature::StartWander(const FVector& Center, float Radius, float Spee
 	AutoAction = EAutoAction::None;
 }
 
-// --- tick / movement --------------------------------------------------------
-
 void ASceneCreature::Tick(float Dt)
 {
 	Super::Tick(Dt);
 
-	// Always depenetrate after movement — even on early returns (idle, atWater).
-	struct FOverlapGuard
-	{
-		ASceneCreature* Owner = nullptr;
-		explicit FOverlapGuard(ASceneCreature* InOwner) : Owner(InOwner) {}
-		~FOverlapGuard()
-		{
-			if (Owner)
-			{
-				Owner->ResolveCreatureOverlaps();
-			}
-		}
-	} OverlapGuard(this);
+	CurrentSpeed = GetVelocity().Size2D();
 
 	if (!bHaveHome)
 	{
@@ -232,9 +292,6 @@ void ASceneCreature::Tick(float Dt)
 		bHaveHome = true;
 	}
 
-	// Drives evolve every tick; the utility layer then fills any idle gap with an
-	// autonomous action (seek water / rest / graze). Both run before movement so
-	// the chosen goal is resolved this same frame.
 	EvolveDrives(Dt);
 	UpdateAutonomy(Dt);
 
@@ -270,7 +327,7 @@ void ASceneCreature::Tick(float Dt)
 
 	if (!bHaveGoal)
 	{
-		CurrentSpeed = 0.f;
+		StopLocomotion();
 		return;
 	}
 
@@ -279,61 +336,62 @@ void ASceneCreature::Tick(float Dt)
 	ToGoal.Z = 0.f;
 	const float PlanarDist = ToGoal.Size();
 
-	if (PlanarDist <= AcceptanceRadius)
-	{
-		OnReachedGoal();
-		return;
-	}
-
-	const FVector Dir = ToGoal / PlanarDist;
-	const float Step = FMath::Min(SpeedForGoal * Dt, PlanarDist);
-	FVector NewLoc = Self + Dir * Step;
-	const float NewGroundZ = GroundZ(NewLoc.X, NewLoc.Y, Self.Z);
-
-	// Shoreline stop: only at the actual lake — planar distance to the water
-	// centre must be within the lake radius. Without this gate, any cliff or
-	// depression below the water Z elsewhere on the map falsely reads as "atWater".
 	const float DistToLakeXY = bHaveWaterSource
-		? FVector::Dist2D(FVector(NewLoc.X, NewLoc.Y, 0.f),
+		? FVector::Dist2D(FVector(Self.X, Self.Y, 0.f),
 			FVector(WaterSource.X, WaterSource.Y, 0.f))
 		: TNumericLimits<float>::Max();
 	const bool bWithinLakePlanar = bHaveWaterSource &&
 		(DistToLakeXY <= WaterSourceRadius + ShoreStopSlack);
 
-	// Only halt at the shoreline while actively seeking water — not during graze
-	// wander, or a colocated camp pool turns the whole shelf into a twitchy loop.
+	float FloorZ = GroundZ(Self.X, Self.Y, Self.Z);
+	if (const UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		if (Move->CurrentFloor.IsWalkableFloor())
+		{
+			FloorZ = Move->CurrentFloor.HitResult.ImpactPoint.Z;
+		}
+	}
+
 	if (bAvoidWater && AutoAction == EAutoAction::SeekWater && bWithinLakePlanar &&
-		NewGroundZ <= WaterZ + WaterEdgeMargin)
+		FloorZ <= WaterZ + WaterEdgeMargin)
 	{
 		Path.Reset();
 		PathIndex = 0;
 		bHasTarget = false;
 		bWander = false;
 		Leader = nullptr;
-		CurrentSpeed = 0.f;
+		StopLocomotion();
 		bArrived = true;
 		bAtWater = true;
-		// Reached the water: explicit order (if any) is done — let autonomy take
-		// over so a thirsty creature drinks here next tick.
 		bExplicitOrder = false;
 		ReportEvent(TEXT("atWater"));
-		// Face the water, then idle until the director sends an action (drink).
-		FaceDirection(Dir, Dt);
+		if (UCharacterMovementComponent* Move = GetCharacterMovement())
+		{
+			Move->bOrientRotationToMovement = false;
+		}
+		if (!ToGoal.IsNearlyZero())
+		{
+			FaceDirection(ToGoal / FMath::Max(PlanarDist, 1.f), Dt);
+		}
 		SetLocomotionState(TEXT("idle"));
 		return;
 	}
 
-	NewLoc.Z = NewGroundZ;
-	if (!TryMoveTo(NewLoc))
+	if (PlanarDist <= AcceptanceRadius)
 	{
-		// Blocked (crowd jam / cliff) — don't leave walk anim running in place.
-		CurrentSpeed = 0.f;
-		SetLocomotionState(TEXT("idle"));
+		if (CurrentSpeed <= ArrivalSpeedThreshold)
+		{
+			StopLocomotion();
+			OnReachedGoal();
+		}
+		else
+		{
+			SteerToward(Goal, SpeedForGoal * 0.5f);
+		}
 		return;
 	}
-	FaceDirection(Dir, Dt);
 
-	CurrentSpeed = SpeedForGoal;
+	SteerToward(Goal, SpeedForGoal);
 	SetLocomotionState(SpeedForGoal >= RunSpeed * 0.75f ? TEXT("run") : TEXT("walk"));
 }
 
@@ -357,7 +415,7 @@ void ASceneCreature::OnReachedGoal()
 			{
 				Path.Reset();
 				PathIndex = 0;
-				CurrentSpeed = 0.f;
+				StopLocomotion();
 				bArrived = true;
 				bExplicitOrder = false;
 				ReportEvent(TEXT("arrived"));
@@ -366,9 +424,8 @@ void ASceneCreature::OnReachedGoal()
 		}
 		return;
 	}
-	// Single MoveTo reached.
 	bHasTarget = false;
-	CurrentSpeed = 0.f;
+	StopLocomotion();
 	bArrived = true;
 	bExplicitOrder = false;
 	ReportEvent(TEXT("arrived"));
@@ -418,13 +475,13 @@ void ASceneCreature::FaceDirection(const FVector& Dir, float Dt)
 	{
 		return;
 	}
-	const float TargetYaw = Dir.Rotation().Yaw + MeshYawOffset;
+	// Face the true heading; the mesh carries the art yaw offset (set in ApplyDef),
+	// so the actor rotation must NOT re-apply MeshYawOffset.
+	const float TargetYaw = Dir.Rotation().Yaw;
 	const FRotator NewRot = FMath::RInterpConstantTo(
 		GetActorRotation(), FRotator(0.f, TargetYaw, 0.f), Dt, TurnSpeedDeg);
 	SetActorRotation(NewRot);
 }
-
-// --- drives / autonomy ------------------------------------------------------
 
 void ASceneCreature::EvolveDrives(float Dt)
 {
@@ -432,7 +489,6 @@ void ASceneCreature::EvolveDrives(float Dt)
 	const bool bDrinking = (AutoAction == EAutoAction::Drinking) || (CurrentState == TEXT("drink"));
 	const bool bResting = (AutoAction == EAutoAction::Resting) || (!bMoving && CurrentState == TEXT("idle"));
 
-	// Thirst: rises with time (faster while moving), drops fast while drinking.
 	if (bDrinking)
 	{
 		Thirst -= ThirstDrinkDropPerSec * Dt;
@@ -443,7 +499,6 @@ void ASceneCreature::EvolveDrives(float Dt)
 	}
 	Thirst = FMath::Clamp(Thirst, 0.f, 1.f);
 
-	// Fatigue: accrues with locomotion (run costs more), recovers while resting.
 	if (bMoving)
 	{
 		Fatigue += (CurrentSpeed >= RunSpeed * 0.75f ? FatigueRunRisePerSec : FatigueWalkRisePerSec) * Dt;
@@ -454,7 +509,6 @@ void ASceneCreature::EvolveDrives(float Dt)
 	}
 	Fatigue = FMath::Clamp(Fatigue, 0.f, 1.f);
 
-	// Edge-triggered events for the push channel (only on the flag flip up).
 	const bool bNowThirsty = Thirst >= ThirstSeekThreshold;
 	if (bNowThirsty && !bWasThirsty)
 	{
@@ -477,7 +531,6 @@ bool ASceneCreature::HasActiveGoal() const
 
 void ASceneCreature::UpdateAutonomy(float Dt)
 {
-	// Autonomy only fills idle gaps; an explicit director order suspends it.
 	if (!bAutonomous || bExplicitOrder)
 	{
 		return;
@@ -493,16 +546,16 @@ void ASceneCreature::UpdateAutonomy(float Dt)
 			AutoAction = EAutoAction::None;
 			bAtWater = false;
 		}
-		return; // stay put and keep drinking
+		return;
 
 	case EAutoAction::Resting:
 		if (Fatigue <= FatigueRestedThreshold)
 		{
-			AutoAction = EAutoAction::None; // fall through to choose next
+			AutoAction = EAutoAction::None;
 		}
 		else
 		{
-			return; // keep resting
+			return;
 		}
 		break;
 
@@ -511,6 +564,7 @@ void ASceneCreature::UpdateAutonomy(float Dt)
 		{
 			AutoAction = EAutoAction::Drinking;
 			ActionTimer = 0.f;
+			StopLocomotion();
 			CurrentState = TEXT("drink");
 			PlayClip(TEXT("drink"), true);
 			ReportEvent(TEXT("drinking"));
@@ -518,13 +572,13 @@ void ASceneCreature::UpdateAutonomy(float Dt)
 		}
 		if (HasActiveGoal())
 		{
-			return; // still travelling to the water
+			return;
 		}
-		// Reached the source point without a shoreline halt: drink if still thirsty.
 		if (Thirst >= ThirstSeekThreshold)
 		{
 			AutoAction = EAutoAction::Drinking;
 			ActionTimer = 0.f;
+			StopLocomotion();
 			CurrentState = TEXT("drink");
 			PlayClip(TEXT("drink"), true);
 			ReportEvent(TEXT("drinking"));
@@ -547,8 +601,6 @@ void ASceneCreature::UpdateAutonomy(float Dt)
 
 void ASceneCreature::ChooseAutonomousAction()
 {
-	// Do not re-issue the same autonomous goal every tick — that resets path/wander
-	// and reads as a side-to-side shake at the goal.
 	if (AutoAction == EAutoAction::SeekWater && Thirst >= ThirstSeekThreshold && HasActiveGoal())
 	{
 		return;
@@ -563,7 +615,6 @@ void ASceneCreature::ChooseAutonomousAction()
 		return;
 	}
 
-	// Priority: slake thirst > rest when exhausted > graze near home.
 	if (Thirst >= ThirstSeekThreshold && bHaveWaterSource)
 	{
 		AutoAction = EAutoAction::SeekWater;
@@ -571,7 +622,7 @@ void ASceneCreature::ChooseAutonomousAction()
 		bWander = false;
 		bHasTarget = false;
 		Path.Reset();
-		Path.Add(ComputeShoreDrinkPoint()); // nearest rim point, not the lake centre
+		Path.Add(ComputeShoreDrinkPoint());
 		PathIndex = 0;
 		bLoopPath = false;
 		DesiredSpeed = WalkSpeed;
@@ -589,12 +640,11 @@ void ASceneCreature::ChooseAutonomousAction()
 		bHasTarget = false;
 		Path.Reset();
 		PathIndex = 0;
-		CurrentSpeed = 0.f;
+		StopLocomotion();
 		SetLocomotionState(TEXT("idle"));
 		return;
 	}
 
-	// Graze: amble around home at a relaxed pace.
 	AutoAction = EAutoAction::Graze;
 	Leader = nullptr;
 	bHasTarget = false;
@@ -629,126 +679,4 @@ FVector ASceneCreature::ComputeShoreDrinkPoint() const
 	FVector Rim = WaterSource + Delta * WaterSourceRadius;
 	Rim.Z = GroundZ(Rim.X, Rim.Y, WaterSource.Z);
 	return Rim;
-}
-
-void ASceneCreature::ResolveCreatureOverlaps()
-{
-	if (!Capsule || !GetWorld())
-	{
-		return;
-	}
-
-	const float Radius = Capsule->GetScaledCapsuleRadius();
-	const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(CreatureOverlap), false, this);
-	const FCollisionShape Shape = FCollisionShape::MakeCapsule(Radius, HalfHeight);
-
-	for (int32 Iter = 0; Iter < 3; ++Iter)
-	{
-		FVector Loc = GetActorLocation();
-		TArray<FOverlapResult> Overlaps;
-		GetWorld()->OverlapMultiByChannel(
-			Overlaps, Loc, GetActorQuat(), ECC_Pawn, Shape, Params);
-
-		bool bAdjusted = false;
-		for (const FOverlapResult& Hit : Overlaps)
-		{
-			const ASceneCreature* Other = Cast<ASceneCreature>(Hit.GetActor());
-			if (!Other || Other == this || !Other->Capsule)
-			{
-				continue;
-			}
-
-			const float OtherRadius = Other->Capsule->GetScaledCapsuleRadius();
-			const float MinDist = Radius + OtherRadius + 40.f;
-
-			FVector Delta = Loc - Other->GetActorLocation();
-			Delta.Z = 0.f;
-			const float DistSq = Delta.SizeSquared();
-			if (DistSq >= MinDist * MinDist)
-			{
-				continue;
-			}
-
-			float Dist = FMath::Sqrt(DistSq);
-			FVector PushDir;
-			if (Dist < KINDA_SMALL_NUMBER)
-			{
-				const uint32 Hash = GetTypeHash(CreatureId) ^ GetTypeHash(Other->CreatureId);
-				const float Angle = static_cast<float>(Hash % 6283) / 1000.f;
-				PushDir = FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f);
-				Dist = 0.f;
-			}
-			else
-			{
-				PushDir = Delta / Dist;
-			}
-
-			Loc += PushDir * (MinDist - Dist);
-			bAdjusted = true;
-		}
-
-		if (!bAdjusted)
-		{
-			break;
-		}
-
-		Loc.Z = GroundZ(Loc.X, Loc.Y, Loc.Z);
-		SetActorLocation(Loc, false);
-	}
-}
-
-bool ASceneCreature::TryMoveTo(const FVector& NewLoc)
-{
-	const FVector Self = GetActorLocation();
-	const FVector Delta = NewLoc - Self;
-	if (Delta.IsNearlyZero())
-	{
-		return true;
-	}
-
-	// Landscape height is traced separately; the capsule ignores WorldStatic.
-	// Sweeps against other kinematic pawns in the same tick are unreliable, so
-	// we teleport and let ResolveCreatureOverlaps push penetrations apart.
-	SetActorLocation(NewLoc, false);
-
-	// Crowd jam: if still overlapping another creature, try a half-step retreat.
-	ResolveCreatureOverlaps();
-	const auto bOverlapsCreature = [this]() -> bool
-	{
-		TArray<FOverlapResult> Hits;
-		FCollisionQueryParams JamParams(SCENE_QUERY_STAT(CreatureJam), false, this);
-		const FCollisionShape JamShape = FCollisionShape::MakeCapsule(
-			Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight());
-		if (!GetWorld()->OverlapMultiByChannel(
-				Hits, GetActorLocation(), GetActorQuat(), ECC_Pawn, JamShape, JamParams))
-		{
-			return false;
-		}
-		for (const FOverlapResult& Hit : Hits)
-		{
-			const ASceneCreature* Other = Cast<ASceneCreature>(Hit.GetActor());
-			if (Other && Other != this)
-			{
-				return true;
-			}
-		}
-		return false;
-	};
-
-	if (bOverlapsCreature())
-	{
-		FVector Half = Self + Delta * 0.5f;
-		Half.Z = GroundZ(Half.X, Half.Y, Half.Z);
-		SetActorLocation(Half, false);
-		ResolveCreatureOverlaps();
-		if (bOverlapsCreature())
-		{
-			SetActorLocation(Self, false);
-			return false;
-		}
-	}
-
-	return true;
 }

@@ -7,16 +7,8 @@
 class ACreatureDirector;
 
 /**
- * Pushes live creature state (incl. drives) to the Pixel Streaming web frontend
- * so a custom overlay can render a drives panel without exposing Remote Control
- * publicly. It owns a PixelStreaming2 input component and, a few times a second,
- * sends QueryCreatures() JSON via SendPixelStreaming2Response; the frontend
- * consumes it through addResponseEventListener.
- *
- * The component is created by class and invoked via reflection on purpose: the
- * UPixelStreaming2Input header lives under the plugin's Internal/ folder, so a
- * direct C++ include from this game module is not a supported (or stable) build
- * dependency. Reflection needs only the plugin to be loaded at runtime (it is).
+ * Pushes live creature state to the PS2 frontend and receives overlay commands
+ * (camera mode, etc.) via PixelStreaming2 UI interactions.
  */
 UCLASS()
 class YELLOWWORLD_API AStreamBridge : public AActor
@@ -26,9 +18,9 @@ class YELLOWWORLD_API AStreamBridge : public AActor
 public:
 	AStreamBridge();
 
+	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
 
-	/** How often to push state to the browser (seconds). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Stream")
 	float PushIntervalSec = 0.5f;
 
@@ -36,11 +28,14 @@ private:
 	UPROPERTY()
 	TObjectPtr<UActorComponent> InputComp;
 
-	/** Cached UPixelStreaming2Input::SendPixelStreaming2Response. */
 	UFunction* SendFn = nullptr;
 
 	TWeakObjectPtr<ACreatureDirector> Director;
 	FTimerHandle PushTimer;
 
+	void BindUiInput();
 	void PushState();
+
+	UFUNCTION()
+	void HandleUiInteraction(const FString& Descriptor);
 };
