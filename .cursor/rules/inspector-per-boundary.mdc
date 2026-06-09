@@ -1,0 +1,50 @@
+---
+description: R5 — Adding or changing a cross-package boundary requires updating the corresponding inspector page in the same change
+globs: packages/**/*.{ts,tsx,py}
+alwaysApply: false
+---
+
+# R5 — Inspector per boundary
+
+When you add a new cross-package boundary, or change the shape of an
+existing one, a corresponding inspector page in `apps/inspector/` **must**
+be added or updated **in the same change**. The inspector is part of
+"done", not a follow-up.
+
+This is the rule that prevents us from re-living The Body Field — where
+debug UI was bolted on after the fact, lagged behind reality, and ended
+up cluttering the main app. Here the inspector *is* how we know it works.
+
+## Boundary → inspector page mapping
+
+| Boundary | Inspector page |
+|---|---|
+| `LLMClient` (prompt → tool calls) | `01-prompt-to-tool-calls` |
+| `WorldMemoryStore` (memory-graph) | `02-world-state-graph` |
+| `WorldAPIClient` (world-api) | `03-world-api-mock-bench` |
+| `RCBridge` (rc-bridge) | `04-rc-round-trip` |
+| `PCGRunner` (pcg) | `05-pcg-inspector` |
+| `StreamingMetrics` (streaming) | `06-streaming-diagnostics` |
+| Cross-cutting trace | `07-pipeline-trace-viewer` |
+
+## Checklist when touching a boundary
+
+- [ ] Updated the interface / Protocol (R2)
+- [ ] At least one mock impl reflects the new shape (R1, R2)
+- [ ] All boundary methods are `@boundary`-wrapped (R3)
+- [ ] Contract types come from the canonical package only (R4)
+- [ ] **Inspector page** for this boundary renders the new inputs/outputs
+- [ ] Inspector still works against the **mock** impl with no real backend
+
+## ❌ BAD
+
+> "I'll add a new `getWeatherHistory` method to `WorldAPIClient` now and
+> update the inspector in a follow-up."
+
+This is exactly what we are ruling out. The inspector update is part of the
+same change.
+
+## ✅ GOOD
+
+One change adds the interface method, the mock impl, the real impl
+stub, and renders the new I/O in the inspector page.

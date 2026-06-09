@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+allowBuilds:
+  esbuild: set this to true or false
+# Dependencies allowed to run install/build scripts (pnpm gates these by default).
+# esbuild ships a native binary it links in a postinstall; tsx + vitest need it.
+onlyBuiltDependencies:
+  - esbuild

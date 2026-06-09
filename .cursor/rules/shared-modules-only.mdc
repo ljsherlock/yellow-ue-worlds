@@ -1,0 +1,43 @@
+---
+description: R1 — Inspector pages must consume shared packages, never reimplement production logic
+globs: apps/inspector/**/*.{ts,tsx,py}
+alwaysApply: false
+---
+
+# R1 — Shared modules only (in inspector pages)
+
+Inspector pages are **windows** onto the real system, not parallel implementations.
+Any logic that does real work (LLM calls, graph queries, world-API calls,
+RC transport, PCG parameterisation) lives in `packages/`. Inspector pages
+import that logic and render its inputs/outputs — nothing more.
+
+If you find yourself writing business logic inside `apps/inspector/`, **stop**:
+extract it to the correct `packages/*` module first, then import it.
+
+## ❌ BAD
+
+```ts
+// apps/inspector/src/pages/03-world-api-mock-bench.tsx
+function callTool(name: string, args: unknown) {
+  // ad-hoc fetch to /rc/preset — production uses a different code path
+  return fetch(`/rc/preset/${name}`, { method: "PUT", body: JSON.stringify(args) });
+}
+```
+
+## ✅ GOOD
+
+```ts
+// apps/inspector/src/pages/03-world-api-mock-bench.tsx
+import type { WorldAPIClient } from "@yellow-ue/world-api";
+import { MockWorldAPIClient } from "@yellow-ue/world-api/mock";
+
+const client: WorldAPIClient = new MockWorldAPIClient();
+const result = await client.setSkyState({ preset: "storm" });
+```
+
+## How to fix a violation
+
+1. Identify what the inspector is doing that should live elsewhere.
+2. Move it into the appropriate `packages/*` module (creating one if needed).
+3. Re-import it in the inspector.
+4. If no package fits, that's a signal a new boundary is being born — see R5.

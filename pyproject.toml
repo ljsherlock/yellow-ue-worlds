@@ -1,0 +1,50 @@
+[project]
+name = "yellow-ue-worlds"
+version = "0.0.1"
+description = "LLM-controlled, real-time, stateful 3D world on Unreal Engine 5.7."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+
+# Python workspace members will be added in task 0.4 (packages/tracing)
+# and Phase 2 (packages/llm-brain, packages/memory-graph, packages/world-api).
+# When adding the first member, uncomment the block below:
+#
+# [tool.uv.workspace]
+# members = ["packages/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes
+  "I",    # isort
+  "W",    # pycodestyle warnings
+  "B",    # bugbear
+  "UP",   # pyupgrade
+  "RET",  # flake8-return
+  "SIM",  # flake8-simplify
+  "TCH",  # flake8-type-checking
+]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["packages", "apps"]
+python_files = ["test_*.py", "*_test.py"]

@@ -1,0 +1,34 @@
+# Yellow 3D World — TLS reverse proxy (deployed to /etc/caddy/Caddyfile on the VM).
+#
+# Explicit `https://` site address => Caddy binds ONLY :443 and never :80, so it
+# can't collide with the Pixel Streaming SignallingWebServer which serves the
+# player page on :80. The cert is obtained via the TLS-ALPN-01 ACME challenge
+# (port 443 only), so port 80 staying with the signalling server is fine.
+#
+# reverse_proxy forwards both the player HTML and the signalling WebSocket
+# upgrade (Caddy upgrades wss automatically). WebRTC *media* does NOT pass
+# through Caddy — it flows browser<->VM directly over UDP 49152-65535.
+#
+# NOTE: Caddy must NOT bind :80 — that port belongs to the signalling server,
+# and proxying to 127.0.0.1:80 while Caddy also listens there causes a redirect
+# loop. http_port moves Caddy's (unused) HTTP listener off 80; TLS-ALPN-01 on
+# :443 still issues/renews the cert.
+{
+	http_port 8081
+	auto_https disable_redirects
+}
+
+https://3dworld.helloyellow.ai {
+	# Natural-language prompt API -> the brain service (yellow-brain.service),
+	# a localhost-only Node server on :8000 that turns prompts into Remote
+	# Control calls. `handle` (not handle_path) keeps the /api/brain prefix; the
+	# server strips it. Remote Control (:30010) is never proxied or exposed.
+	handle /api/brain/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# Everything else: the Pixel Streaming player page + wss signalling on :80.
+	handle {
+		reverse_proxy 127.0.0.1:80
+	}
+}

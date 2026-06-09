@@ -1,0 +1,30 @@
+{
+  "name": "yellow-ue-ops",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Ops scripts for the UE 5.7 Pixel Streaming spike VM (GCP). Run from this dir: npm run ue:<cmd>.",
+  "scripts": {
+    "ue:provision": "bash scripts/vm.sh provision",
+    "ue:up": "bash scripts/vm.sh up",
+    "ue:down": "bash scripts/vm.sh down",
+    "ue:destroy": "bash scripts/vm.sh destroy",
+    "ue:status": "bash scripts/vm.sh status",
+    "ue:ip": "bash scripts/vm.sh ip",
+    "ue:ssh": "bash scripts/vm.sh ssh",
+    "ue:sync": "bash scripts/vm.sh sync",
+    "ue:fix-perms": "bash scripts/vm.sh fix-perms",
+    "ue:build": "bash scripts/vm.sh build",
+    "ue:stage-fab": "bash scripts/vm.sh stage-fab",
+    "ue:fab-import": "bash scripts/vm.sh fab-import",
+    "ue:fab-vnc": "bash scripts/vm.sh fab-vnc",
+    "ue:run": "bash scripts/vm.sh run",
+    "ue:run:rc": "bash scripts/vm.sh run-rc",
+    "ue:rc-tunnel": "bash scripts/vm.sh rc-tunnel",
+    "ue:stop-app": "bash scripts/vm.sh stop-app",
+    "ue:logs": "bash scripts/vm.sh logs",
+    "ue:logs:app": "bash scripts/vm.sh logs-app",
+    "ue:ports": "bash scripts/vm.sh ports",
+    "ue:open": "bash scripts/vm.sh open",
+    "ue:deploy": "bash scripts/vm.sh deploy"
+  }
+}

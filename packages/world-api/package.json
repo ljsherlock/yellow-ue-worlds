@@ -1,0 +1,29 @@
+{
+  "name": "@yellow-ue/world-api",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Canonical contract for the LLM-to-Unreal World API. Single source of truth for tool schemas, types, and client interface (R4).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mock": "./src/mock.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'lint configured in Task 0.4 (eslint root)' && exit 0",
+    "format": "echo 'format configured in Task 0.4' && exit 0",
+    "build": "echo 'world-api is consumed source-first; no build step' && exit 0"
+  },
+  "dependencies": {
+    "@yellow-ue/tracing": "workspace:*",
+    "zod": "^4.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0"
+  }
+}

@@ -1,0 +1,524 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "toolCalls": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "SetSkyState"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "preset": {
+                    "type": "string",
+                    "enum": [
+                      "clear",
+                      "cloudy",
+                      "storm",
+                      "sunset",
+                      "night"
+                    ]
+                  },
+                  "transition_seconds": {
+                    "default": 5,
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "preset",
+                  "transition_seconds"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "AdvanceTime"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "hours": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "speed_multiplier": {
+                    "default": 1,
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "hours",
+                  "speed_multiplier"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "SpawnTrees"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "area": {
+                    "type": "object",
+                    "properties": {
+                      "center": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "z": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "z"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "radius": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "center",
+                      "radius"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "count": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 10000
+                  },
+                  "species": {
+                    "type": "string",
+                    "enum": [
+                      "oak",
+                      "pine",
+                      "birch"
+                    ]
+                  },
+                  "growth_stage": {
+                    "default": "mature",
+                    "type": "string",
+                    "enum": [
+                      "seedling",
+                      "sapling",
+                      "mature"
+                    ]
+                  }
+                },
+                "required": [
+                  "area",
+                  "count",
+                  "species",
+                  "growth_stage"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "SpawnCreature"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "species": {
+                    "type": "string",
+                    "enum": [
+                      "elephant_adult",
+                      "elephant_baby"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "at": {
+                    "type": "string",
+                    "enum": [
+                      "herd_start",
+                      "watering_hole"
+                    ]
+                  },
+                  "yaw": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "species",
+                  "id",
+                  "at"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "MoveCreatureTo"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "to": {
+                    "type": "string",
+                    "enum": [
+                      "herd_start",
+                      "watering_hole"
+                    ]
+                  },
+                  "speed": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "id",
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "SetCreatureState"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "idle",
+                      "walk",
+                      "run",
+                      "drink",
+                      "graze"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "state"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "SetCreatureLeader"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "leader_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "distance_m": {
+                    "default": 4,
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "id",
+                  "leader_id",
+                  "distance_m"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "WanderCreature"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "around": {
+                    "type": "string",
+                    "enum": [
+                      "herd_start",
+                      "watering_hole"
+                    ]
+                  },
+                  "radius_m": {
+                    "default": 15,
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "speed": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "id",
+                  "around",
+                  "radius_m"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "DespawnCreature"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "ClearCreatures"
+              },
+              "args": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "Wait"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "seconds": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 600
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "WaitForArrival"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "timeout_seconds": {
+                    "default": 120,
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 600
+                  }
+                },
+                "required": [
+                  "id",
+                  "timeout_seconds"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "args"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "reasoning": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "tokens": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "output": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false
+    },
+    "finishReason": {
+      "type": "string",
+      "enum": [
+        "stop",
+        "length",
+        "tool_calls",
+        "content_filter"
+      ]
+    }
+  },
+  "required": [
+    "toolCalls",
+    "reasoning",
+    "model",
+    "tokens",
+    "finishReason"
+  ],
+  "additionalProperties": false
+}

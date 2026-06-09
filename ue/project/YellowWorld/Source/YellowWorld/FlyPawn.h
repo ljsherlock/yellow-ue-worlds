@@ -1,0 +1,78 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/DefaultPawn.h"
+#include "FlyPawn.generated.h"
+
+/**
+ * Spectator-style fly camera for inspecting the big (8 km) imported maps over
+ * Pixel Streaming. ADefaultPawn already gives WASD + QE + mouse-look via a
+ * UFloatingPawnMovement; the stock MaxSpeed (1200 cm/s = 12 m/s) is uselessly
+ * slow on an 8 km terrain. We crank the cruise speed and add a hold-to-boost
+ * "turbo" on Shift (default 10x) so you can cross the map in seconds, then slow
+ * down for close inspection. Bound directly to keys (no project input mappings
+ * required) so it works in the packaged/headless streamed build.
+ */
+UCLASS()
+class YELLOWWORLD_API AFlyPawn : public ADefaultPawn
+{
+	GENERATED_BODY()
+
+public:
+	AFlyPawn();
+
+	virtual void SetupPlayerInputComponent(UInputComponent* InInputComponent) override;
+	virtual void Tick(float DeltaSeconds) override;
+
+	/** Trail and frame the given actor (the streamed view follows a creature).
+	 *  Pass nullptr (or call ClearFollowTarget) to return to free-fly. */
+	void SetFollowTarget(AActor* Target);
+	void ClearFollowTarget();
+
+	/** Chase-cam framing: how far behind / above the target, and how snappily the
+	 *  camera lags toward the ideal pose. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float FollowDistance = 1600.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float FollowHeight = 750.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float FollowLag = 3.f;
+
+	// Possession-safe hooks: SetupPlayerInputComponent can run before the pawn is
+	// possessed (GetController() is null then), so applying the look-scale there
+	// alone silently no-ops. These fire after the controller is assigned.
+	virtual void NotifyControllerChanged() override;
+	virtual void PawnClientRestart() override;
+
+	/** Normal cruise speed in cm/s (4000 = 40 m/s). Tuned down from 150 m/s, which
+	 *  was too fast for close inspection; Shift turbo still crosses the map fast. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float CruiseSpeed = 4000.f;
+
+	/** Multiplier applied to CruiseSpeed while the turbo key (Shift) is held. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float TurboMultiplier = 10.f;
+
+	/** Mouse look sensitivity (yaw/pitch input scale on the owning PlayerController).
+	 *  Halved from the engine default 2.5/-2.5 — the stock speed felt twice too fast. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float LookYawScale = 1.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yellow|Fly")
+	float LookPitchScale = -1.25f;
+
+private:
+	TWeakObjectPtr<AActor> FollowTarget;
+	FVector FollowPrevTargetLoc = FVector::ZeroVector;
+	FVector FollowDir = FVector(1.f, 0.f, 0.f);
+	bool bHaveFollowPrev = false;
+
+	void ApplySpeed(float Speed);
+	/** Push LookYaw/PitchScale onto the owning PlayerController. Safe to call
+	 *  repeatedly; no-ops until a PlayerController possesses this pawn. */
+	void ApplyLookScale();
+	void TurboOn();
+	void TurboOff();
+};

@@ -1,0 +1,34 @@
+{
+  "name": "@yellow-ue/llm-brain",
+  "version": "0.0.1",
+  "private": true,
+  "description": "The LLMClient boundary — prompt in, WorldAPI tool calls out. Phase 1 ships the interface + MockLLMClient; the real LangGraph agent (Python) and its TS HTTP client land in Phase 2 Track A.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mock": "./src/mock.ts",
+    "./http": "./src/http.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "codegen": "vitest run codegen.gen",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'lint configured later' && exit 0",
+    "format": "echo 'format configured later' && exit 0",
+    "build": "echo 'llm-brain is consumed source-first; no build step' && exit 0"
+  },
+  "dependencies": {
+    "@yellow-ue/tracing": "workspace:*",
+    "@yellow-ue/world-api": "workspace:*",
+    "@yellow-ue/world-model": "workspace:*",
+    "zod": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0"
+  }
+}

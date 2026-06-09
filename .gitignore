@@ -1,0 +1,82 @@
+# --- Node / TypeScript ---
+node_modules/
+dist/
+build/
+# Staged Fab plugin from Mac Launcher (large; re-stage with npm run ue:stage-fab)
+ue/third-party/FabPlugin/Fab/
+
+# ...but the UE VM build scripts live in ue/build/ and MUST be tracked
+# (a blanket build/ rule silently dropped build-in-container.sh once before).
+!ue/build/
+!ue/build/**
+.turbo/
+.next/
+.vite/
+.cache/
+.pnpm-store/
+*.tsbuildinfo
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.uv/
+
+# --- Environment ---
+.env
+.env.local
+.env.*.local
+# Keep templates checked in:
+!.env.example
+!.env.template
+
+# --- Logs ---
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editor / IDE ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Unreal Engine (for ue-project/) ---
+# Project Content is huge and not git-managed: imported Fab packs (e.g. the 8K
+# Savannah pack, ~13GB) and cook-generated assets live on the VM / Fab, not here.
+# Nothing under Content is tracked.
+ue/project/YellowWorld/Content/
+Saved/
+Intermediate/
+Binaries/
+DerivedDataCache/
+.vs/
+*.sln
+*.suo
+*.VC.db
+*.VC.opendb
+Build/Receipts/
+
+# --- Generated artifacts ---
+generated/
+*.gen.ts
+*.gen.py
+
+# --- Misc ---
+coverage/
+.nyc_output/
