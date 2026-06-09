@@ -16,6 +16,7 @@
   },
   "scripts": {
     "cli": "tsx src/cli.ts",
+    "serve": "tsx src/server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

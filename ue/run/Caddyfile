@@ -18,7 +18,17 @@
 	auto_https disable_redirects
 }
 
-# /api/brain/* will be added here once the brain service is deployed (tasks 4-6).
 https://3dworld.helloyellow.ai {
-	reverse_proxy 127.0.0.1:80
+	# Natural-language prompt API -> the brain service (yellow-brain.service),
+	# a localhost-only Node server on :8000 that turns prompts into Remote
+	# Control calls. `handle` (not handle_path) keeps the /api/brain prefix; the
+	# server strips it. Remote Control (:30010) is never proxied or exposed.
+	handle /api/brain/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# Everything else: the Pixel Streaming player page + wss signalling on :80.
+	handle {
+		reverse_proxy 127.0.0.1:80
+	}
 }

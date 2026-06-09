@@ -211,6 +211,53 @@ you won't need it again.
 > in the headless editor, so Spike 1a needs **no** GUI. PCG and richer content
 > come later, when you can run the editor in the container over a remote desktop.
 
+## Demo runtime — toggles & resilience
+
+The streamed demo (`run-stream.sh` with `DEMO=1`, the default) boots opinionated
+for showing to people, with the knobs pulled out so you can change them later.
+
+**Boot defaults** (in `run/demo_herd.sh` + `run/run-stream.sh`):
+- **World clock 9am** — `demo_herd.sh` calls `WorldDirector.SetTimeOfDay` at boot
+  (`START_HOUR`, default 9); `BeginPlay` doesn't set time, so without this a
+  fresh stream inherits the map's baked sun angle.
+- **Auto-cycling camera** — `run/auto_cam.sh` follows each elephant in turn over
+  Remote Control, advancing every `AUTO_CAM_INTERVAL` seconds (default 15). It
+  is driven over RC, **not** the in-browser buttons (whose input path —
+  `emitUIInteraction` → `StreamBridge` — is currently broken). It deliberately
+  avoids the herd-overview shot, which clears the follow target and looks like an
+  abandoned free camera once the herd walks off. Disable with `AUTO_CAM=0`.
+
+**Hide the on-screen engine logs** — the green/yellow lines that scroll when a
+prompt fires are `AddOnScreenDebugMessage` calls from the directors' `Notify()`.
+`run-stream.sh` suppresses them at startup via the `DisableAllScreenMessages`
+console command. Toggle with `SCREEN_MESSAGES` (default `0` = hidden; set `1` to
+show them for debugging). `UE_LOG` file logging is unaffected either way.
+
+**Frontend overlay toggles** — `run/frontend/player.ts` has a `DEBUG_UI` const:
+- `showDrivesPanel` (default `false`) — right-hand per-elephant drives panel.
+- `showCameraButtons` (default `false`) — manual camera bar (hidden until the
+  input path is fixed).
+Hidden panels stay in the DOM and still receive data, so flipping a value back
+to `true` needs no other change — just rerun `run/deploy_frontend.sh` on the VM
+and refresh the browser (no stream restart for frontend-only changes).
+
+**Restart & watchdog:**
+- `run/restart_stream.sh` — clean restart: kills the app + auto-cam + signalling,
+  frees port 8888, relaunches `run-stream.sh` in the `stream` tmux session. Does
+  **not** touch the brain (systemd, port 8000).
+- `run/watchdog.sh` — minimal supervisor. Polls RC `/remote/info` every
+  `WATCHDOG_INTERVAL`s (60); after `WATCHDOG_FAILS` (3) consecutive misses it
+  runs `restart_stream.sh`, then waits `WATCHDOG_COOLDOWN`s (180) while the app
+  reboots. Launch it in its own tmux session:
+  ```bash
+  tmux new-session -d -s watchdog "bash ~/ue/run/watchdog.sh > /tmp/watchdog.log 2>&1"
+  ```
+  Scope: it recovers from **crashes/hangs** (RC stops answering). It does **not**
+  detect a "wedged" streamer that's alive on RC but no longer accepting WebRTC
+  peers — the signalling server exposes no streamer-list endpoint to probe. It
+  also lives in tmux, so it does not survive a VM reboot (add a startup-script
+  line or a systemd unit if you need that).
+
 ## Tear down (do this when done — L4 bills hourly)
 
 ```bash

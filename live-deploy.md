@@ -13,24 +13,25 @@ Static IP `35.232.241.32` (reservation `ue-pixelspike-ip`, region `us-central1`)
 
 ## TLS reverse proxy (Caddy) — DONE
 
-Caddy v2.11.4 on the VM, config in `ue/run/Caddyfile` (deployed to `/etc/caddy/Caddyfile`). Valid Let's Encrypt cert for `3dworld.helloyellow.ai` (TLS-ALPN-01, auto-renew to Sep 2026). Binds 443 only; `http_port 8081` keeps :80 free for the signalling server; `reverse_proxy 127.0.0.1:80`. Returns 502 until the stream is up (expected). `/api/brain/*` route added with tasks 4-6.
+Caddy v2.11.4 on the VM, config in `ue/run/Caddyfile` (deployed to `/etc/caddy/Caddyfile`). Valid Let's Encrypt cert for `3dworld.helloyellow.ai` (TLS-ALPN-01, auto-renew to Sep 2026). Binds 443 only; `http_port 8081` keeps :80 free for the signalling server; `reverse_proxy 127.0.0.1:80`. Returns 502 until the stream is up (expected). `/api/brain/*` now routed to the brain service on `127.0.0.1:8000` (`handle /api/brain/*`, prefix preserved).
 Follow-up: Caddy was installed by hand — fold the install into `gcp/startup.sh` so it survives a VM recreate.
 
-## Run the brain as a service on the VM
+## Run the brain as a service on the VM — DONE
 
-Turn the Mac-side `scripts/scene.sh` flow into a long-running service co-located with UE, so it reaches RC at `127.0.0.1:30010` with no SSH tunnel. systemd unit or container.
+`yellow-brain.service` (systemd, user `ljsherlock`) runs `tsx packages/rc-bridge/src/server.ts` from `~/yellow`, co-located with UE so it reaches RC at `127.0.0.1:30010` with no SSH tunnel. Toolchain on the VM: Node 22 + pnpm 11 + tsx (global) for rc-bridge, uv 0.11 + Python 3.12 for the brain. Env in `/etc/yellow-brain.env` (RC URL + savanna WorldDirector/CreatureDirector paths; the Spike default in `mapping.ts` is wrong for this map). `enable --now`, restarts on failure. Code lives in `~/yellow` (synced from `packages/` + `apps/` + root manifests); `vm.sh sync` only covers `ue/`.
+Follow-up: add a `vm.sh` sync+install target for `~/yellow`, and fold the toolchain install into `gcp/startup.sh` so it survives a recreate.
 
-## Single prompt endpoint (plan → map → execute)
+## Single prompt endpoint (plan → map → execute) — DONE
 
-`POST /api/brain/prompt {text}` → `packages/brain` plans `WorldAPICall[]` → `packages/rc-bridge` maps + executes RC calls. Welds the existing plan and execute halves behind one HTTP handler.
+`POST /api/brain/prompt {"prompt": "..."}` → spawns `uv run python -m brain.plan` (the same planner as `scene.sh`) → runs the resulting `WorldAPICall[]` in-process via `runPlan` + `HttpRCBridge`. Returns `{ok, plan, steps[]}`. Prompts are serialized so multi-step plans never interleave RC calls. Server is `packages/rc-bridge/src/server.ts`, binds `127.0.0.1:8000` only. Verified end-to-end: "it is now sunset" → `SetWeatherPreset{sunset}` ok.
 
-## Wire a real LLM provider + key
+## Wire a real LLM provider + key — DONE
 
-Set `BRAIN_PROVIDER`/`GOOGLE_API_KEY` (Gemini already in `providers.py`) or add OpenAI/Anthropic. Currently defaults to the fake regex provider.
+Gemini (`gemini-2.5-flash`) via `langchain-google-genai` (the brain's `gemini` extra, installed with `uv sync --extra gemini`). `GOOGLE_API_KEY` stays only in the synced, gitignored `packages/brain/.env`, loaded by `plan.py` — not duplicated into the systemd env. `make_provider()` picks Gemini when the key is present, else the offline FakeProvider.
 
-## Keep Remote Control private
+## Keep Remote Control private — DONE
 
-Never expose :30010/:30020 in the firewall. The brain (on the VM, authenticated) is the only thing that touches RC.
+Firewall never opens :30010/:30020 — confirmed both RC `:30010` and the brain `:8000` are unreachable from the public IP. Only Caddy (localhost) proxies `:8000`, and only the brain process touches RC on localhost.
 
 ## Frontend prompt box
 

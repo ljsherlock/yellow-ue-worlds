@@ -57,7 +57,10 @@ echo "Starting signalling server (logs: /tmp/ss.log) ..."
 ) > /tmp/ss.log 2>&1 &
 SS_PID=$!
 
-cleanup() { kill "$SS_PID" 2>/dev/null || true; }
+cleanup() {
+  kill "$SS_PID" 2>/dev/null || true
+  pkill -f "run/auto_cam.sh" 2>/dev/null || true
+}
 trap cleanup EXIT
 
 echo "Waiting ~20s for the signalling server to build/start ..."
@@ -82,10 +85,20 @@ fi
 # Lets us tune scalability cvars (e.g. grass.CullDistanceScale to push the
 # grass/tree pop-in distance) WITHOUT a rebuild — just relaunch. e.g.
 #   EXEC_CMDS="grass.CullDistanceScale 10" RC=1 ./run-stream.sh
+# SCREEN_MESSAGES (default 0): hide the on-screen engine debug text — the green
+# (CreatureDirector) / yellow (WorldDirector) lines that scroll down the screen
+# when a prompt fires (their Notify() calls AddOnScreenDebugMessage). UE_LOG file
+# logging is unaffected. Set SCREEN_MESSAGES=1 to show them again for debugging.
+SCREEN_MESSAGES="${SCREEN_MESSAGES:-0}"
+EXEC_LIST=()
+if [[ "$SCREEN_MESSAGES" == "0" ]]; then EXEC_LIST+=("DisableAllScreenMessages"); fi
+if [[ -n "${EXEC_CMDS:-}" ]]; then EXEC_LIST+=("$EXEC_CMDS"); fi
 EXEC_ARG=()
-if [[ -n "${EXEC_CMDS:-}" ]]; then
-  EXEC_ARG=(-ExecCmds="$EXEC_CMDS")
-  echo "ExecCmds: $EXEC_CMDS"
+if (( ${#EXEC_LIST[@]} > 0 )); then
+  # UE separates multiple console commands with commas inside -ExecCmds.
+  IFS=,; EXEC_STR="${EXEC_LIST[*]}"; unset IFS
+  EXEC_ARG=(-ExecCmds="$EXEC_STR")
+  echo "ExecCmds: $EXEC_STR"
 fi
 
 echo
@@ -116,6 +129,16 @@ if [[ "$DEMO" == "1" ]]; then
       bash "$DEMO_SCRIPT" || echo "[demo] herd script failed"
     else
       echo "[demo] $DEMO_SCRIPT not found — skipping"
+    fi
+    # Auto-cycling demo camera (RC-driven; the browser buttons' input path is
+    # broken). Alternates herd overview + a rotating focused elephant every
+    # AUTO_CAM_INTERVAL seconds. Disable with AUTO_CAM=0.
+    if [[ "${AUTO_CAM:-1}" == "1" ]]; then
+      AUTOCAM_SCRIPT="${AUTOCAM_SCRIPT:-$HOME/ue/run/auto_cam.sh}"
+      if [[ -f "$AUTOCAM_SCRIPT" ]]; then
+        echo "[demo] starting auto-cycling camera (every ${AUTO_CAM_INTERVAL:-15}s)"
+        AUTO_CAM_INTERVAL="${AUTO_CAM_INTERVAL:-15}" bash "$AUTOCAM_SCRIPT" >/tmp/autocam.log 2>&1 &
+      fi
     fi
   ) &
 fi

@@ -16,6 +16,11 @@ set -uo pipefail
 
 RC="${RC_URL:-http://127.0.0.1:30010}"
 OBJ="${OBJ:-/Game/8KSavannahLandscapePack/Scenes/Landscapes/Landscape_1.Landscape_1:PersistentLevel.CreatureDirector_0}"
+# WorldDirector drives the sun/sky/clock (separate actor from the CreatureDirector).
+WORLD_OBJ="${WORLD_OBJ:-/Game/8KSavannahLandscapePack/Scenes/Landscapes/Landscape_1.Landscape_1:PersistentLevel.WorldDirector_0}"
+# Default world clock. BeginPlay does not set time, so a fresh stream otherwise
+# inherits the map's baked sun angle; pin it to 9am for a consistent morning open.
+START_HOUR="${START_HOUR:-9}"
 
 A_MESH="/Game/Elephant/Meshes/SK_Elephant_Re.SK_Elephant_Re"
 B_MESH="/Game/Elephant/Meshes/SK_Elephant_Baby_Re.SK_Elephant_Baby_Re"
@@ -36,12 +41,22 @@ HOME_Y="${HOME_Y:-625856}"
 ADULTS="${ADULTS:-20}"
 CALVES="${CALVES:-3}"
 
-call() { # $1=functionName  $2=parameters-json
+call() { # $1=functionName  $2=parameters-json  (on the CreatureDirector)
   curl -s -m 8 -X PUT "$RC/remote/object/call" \
     -H "Content-Type: application/json" \
     -d "{\"objectPath\":\"$OBJ\",\"functionName\":\"$1\",\"parameters\":$2,\"generateTransaction\":true}" \
     >/dev/null
 }
+
+wcall() { # $1=functionName  $2=parameters-json  (on the WorldDirector)
+  curl -s -m 8 -X PUT "$RC/remote/object/call" \
+    -H "Content-Type: application/json" \
+    -d "{\"objectPath\":\"$WORLD_OBJ\",\"functionName\":\"$1\",\"parameters\":$2,\"generateTransaction\":true}" \
+    >/dev/null
+}
+
+echo "[demo] setting world clock to ${START_HOUR}:00"
+wcall SetTimeOfDay "{\"Hours\":$START_HOUR}"
 
 echo "[demo] registering elephant types (yaw offset ${YAW_OFF})"
 call DefineCreatureType "{\"Type\":\"elephant_adult\",\"MeshPath\":\"$A_MESH\",\"ClipsCsv\":\"$CLIPS\",\"WalkSpeed\":260,\"RunSpeed\":600,\"UniformScale\":1.0,\"MeshYawOffset\":$YAW_OFF}"
@@ -85,16 +100,17 @@ for j in $(seq 1 "$CALVES"); do
   call SetCreatureLeader "{\"Id\":\"$ID\",\"LeaderId\":\"$LEADER\",\"Distance\":400}"
 done
 
-# Start in free-fly on the default pawn (manual WASD/mouse). The camera buttons
-# are being revisited, so we no longer force a follow-cam at boot. Set
-# DEMO_FOCUS=a01 (or any id) to auto-follow on load instead.
+# On load, frame the whole herd (FocusHerdOverview tracks the herd centroid) so
+# the stream opens looking at the elephants rather than empty savanna. Override
+# with DEMO_FOCUS=a01 (or any id) to follow a single elephant; the UI's "Free
+# fly" button still drops to manual WASD/mouse at any time.
+sleep 2
 if [[ -n "${DEMO_FOCUS:-}" ]]; then
   echo "[demo] follow-cam on ${DEMO_FOCUS}"
-  sleep 2
   call FocusCamera "{\"Id\":\"${DEMO_FOCUS}\"}"
 else
-  echo "[demo] default pawn free-fly (no follow-cam; set DEMO_FOCUS=a01 to override)"
-  call StopFocus "{}"
+  echo "[demo] herd overview cam at boot (set DEMO_FOCUS=a01 to follow one elephant)"
+  call FocusHerdOverview "{}"
 fi
 
 echo "[demo] herd live: $ADULTS adults + $CALVES calves. Grazing first, then drinking."
